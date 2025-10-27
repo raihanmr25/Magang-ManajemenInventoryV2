@@ -1,0 +1,377 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Text, 
+  View, 
+  StyleSheet, 
+  Button, 
+  ActivityIndicator, 
+  ScrollView,
+  Alert,
+  TouchableOpacity 
+} from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { StatusBar } from 'expo-status-bar';
+import { API_URL } from './config';
+
+export default function App() {
+  const [permission, requestPermission] = useCameraPermissions();
+  const [scanned, setScanned] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [itemData, setItemData] = useState(null);
+
+  const isPermissionGranted = permission?.granted;
+
+  const fetchItemByBarcode = async (barcode) => {
+    setLoading(true);
+    try {
+      const url = `${API_URL}/inventory/barcode/${barcode}`;
+      console.log('📡 Fetching from:', url);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      // Get raw text first to see what we're actually receiving
+      const textResponse = await response.text();
+      console.log('📥 Raw response:', textResponse.substring(0, 200)); // First 200 chars
+      
+      // Check if response starts with HTML
+      if (textResponse.trim().startsWith('<')) {
+        Alert.alert(
+          'API Error',
+          'Server returned HTML instead of JSON. This usually means:\n\n' +
+          '1. Laravel endpoint not found (404)\n' +
+          '2. Laravel has an error\n' +
+          '3. Wrong URL\n\n' +
+          'Check the API in your browser first:\n' +
+          url
+        );
+        setItemData(null);
+        return;
+      }
+      
+      // Try to parse as JSON
+      const jsonData = JSON.parse(textResponse);
+      console.log('✅ Parsed JSON:', jsonData);
+      
+      if (!response.ok) {
+        // Handle Laravel error response
+        throw new Error(jsonData.message || `HTTP ${response.status}: Item not found`);
+      }
+      
+      // Check if the response has the expected format
+      if (jsonData.success && jsonData.data) {
+        setItemData(jsonData.data);
+        Alert.alert('Success', 'Item found!');
+      } else {
+        throw new Error('Invalid response format from server');
+      }
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        Alert.alert(
+          'JSON Parse Error',
+          'Could not parse server response. The API might be returning HTML instead of JSON.\n\n' +
+          'Check console logs for details.'
+        );
+      } else {
+        Alert.alert('Error', error.message || 'Failed to fetch item data');
+      }
+      setItemData(null);
+      console.error('❌ Fetch error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBarCodeScanned = ({ data }) => {
+    setScanned(true);
+    setScanning(false);
+    fetchItemByBarcode(data);
+  };
+
+  const startScanning = () => {
+    setScanned(false);
+    setScanning(true);
+    setItemData(null);
+  };
+
+  const cancelScanning = () => {
+    setScanning(false);
+    setScanned(false);
+  };
+
+  if (!permission) {
+    return (
+      <View style={styles.container}>
+        <Text>Requesting camera permission...</Text>
+      </View>
+    );
+  }
+
+  if (!isPermissionGranted) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.errorText}>No access to camera</Text>
+        <Text style={styles.helpText}>Please grant camera permission</Text>
+        <TouchableOpacity style={styles.scanButton} onPress={requestPermission}>
+          <Text style={styles.scanButtonText}>Grant Permission</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <StatusBar style="auto" />
+      
+      <View style={styles.header}>
+        <Text style={styles.title}>Inventory Scanner</Text>
+      </View>
+
+      {scanning ? (
+        <View style={styles.scannerContainer}>
+          <CameraView
+            style={StyleSheet.absoluteFillObject}
+            facing="back"
+            onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+            barcodeScannerSettings={{
+              barcodeTypes: [
+                "qr",
+                "pdf417",
+                "aztec",
+                "ean13",
+                "ean8",
+                "upc_e",
+                "datamatrix",
+                "code39",
+                "code93",
+                "itf14",
+                "codabar",
+                "code128",
+                "upc_a"
+              ],
+            }}
+          />
+          <View style={styles.scanOverlay}>
+            <View style={styles.scanFrame} />
+            <Text style={styles.scanText}>Scan a barcode</Text>
+          </View>
+          <View style={styles.cancelButtonContainer}>
+            <TouchableOpacity style={styles.cancelButton} onPress={cancelScanning}>
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <View style={styles.content}>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#007AFF" />
+              <Text style={styles.loadingText}>Loading item data...</Text>
+            </View>
+          ) : itemData ? (
+            <ScrollView style={styles.dataContainer}>
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Item Information</Text>
+                
+                {Object.entries(itemData).map(([key, value]) => (
+                  <View key={key} style={styles.dataRow}>
+                    <Text style={styles.dataLabel}>{key}:</Text>
+                    <Text style={styles.dataValue}>
+                      {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              
+              <TouchableOpacity style={styles.scanButton} onPress={startScanning}>
+                <Text style={styles.scanButtonText}>Scan Another Item</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyText}>No item scanned yet</Text>
+              <Text style={styles.emptySubtext}>Tap the button below to start scanning</Text>
+            </View>
+          )}
+
+          {!scanning && !loading && (
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity style={styles.scanButton} onPress={startScanning}>
+                <Text style={styles.scanButtonText}>
+                  {itemData ? 'Scan Another Barcode' : 'Start Scanning'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    backgroundColor: '#007AFF',
+    paddingTop: 50,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  content: {
+    flex: 1,
+    padding: 20,
+  },
+  scannerContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  scanOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scanFrame: {
+    width: 250,
+    height: 250,
+    borderWidth: 3,
+    borderColor: 'white',
+    borderRadius: 10,
+    backgroundColor: 'transparent',
+  },
+  scanText: {
+    marginTop: 20,
+    fontSize: 18,
+    color: 'white',
+    fontWeight: '600',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 5,
+  },
+  cancelButtonContainer: {
+    position: 'absolute',
+    bottom: 50,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: 'rgba(255,59,48,0.9)',
+    paddingHorizontal: 40,
+    paddingVertical: 15,
+    borderRadius: 10,
+  },
+  cancelButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
+  },
+  dataContainer: {
+    flex: 1,
+  },
+  card: {
+    backgroundColor: 'white',
+    borderRadius: 10,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 15,
+    color: '#333',
+  },
+  dataRow: {
+    marginBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    paddingBottom: 8,
+  },
+  dataLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    textTransform: 'capitalize',
+    marginBottom: 4,
+  },
+  dataValue: {
+    fontSize: 16,
+    color: '#333',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666',
+    marginBottom: 10,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    color: '#999',
+  },
+  buttonContainer: {
+    marginTop: 20,
+  },
+  scanButton: {
+    backgroundColor: '#007AFF',
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  scanButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  errorText: {
+    fontSize: 18,
+    color: '#FF3B30',
+    fontWeight: '600',
+    marginBottom: 10,
+  },
+  helpText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+  },
+});
