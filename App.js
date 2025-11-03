@@ -1,3 +1,4 @@
+// App.js
 import React, { useState, useEffect } from 'react';
 import { 
   Text, 
@@ -10,7 +11,8 @@ import {
   TextInput,
   Modal,
   FlatList,
-  Dimensions
+  Dimensions,
+  Image
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
@@ -18,27 +20,34 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialIcons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { API_URL as DEFAULT_API_URL } from './config';
 
+// Import AuthScreen
+import AuthScreen from './AuthScreen';
+
 const { width } = Dimensions.get('window');
 
 export default function App() {
+  // State Autentikasi
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null); 
+  const [showProfile, setShowProfile] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  
+  // State Aplikasi
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [itemData, setItemData] = useState(null);
-  const [activeTab, setActiveTab] = useState('scan'); // 'scan', 'list', 'search'
+  const [activeTab, setActiveTab] = useState('scan');
   const [allItems, setAllItems] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [editMode, setEditMode] = useState(false);
   const [editData, setEditData] = useState({});
-  
-  // Settings state
   const [showSettings, setShowSettings] = useState(false);
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [tempApiUrl, setTempApiUrl] = useState(DEFAULT_API_URL);
 
-  // Load saved API URL on mount
   useEffect(() => {
     loadApiUrl();
   }, []);
@@ -71,7 +80,18 @@ export default function App() {
     setTempApiUrl(DEFAULT_API_URL);
   };
 
-  // Fetch item by barcode
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setCurrentUser(null);
+    setItemData(null);
+    setAllItems([]);
+    setSearchResults([]);
+    setActiveTab('scan');
+    setShowProfile(false);
+    setShowLogoutConfirm(false);
+  };
+
+  // --- Fungsi API (Fetch, Update, Search) ---
   const fetchItemByBarcode = async (barcode) => {
     setLoading(true);
     try {
@@ -84,7 +104,7 @@ export default function App() {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-        timeout: 10000, // 10 second timeout
+        timeout: 10000,
       });
       
       const textResponse = await response.text();
@@ -116,7 +136,6 @@ export default function App() {
     } catch (error) {
       const errorMessage = error.message || 'Gagal mengambil data barang';
       
-      // Network error handling
       if (error.message === 'Network request failed' || error.message === 'Failed to fetch') {
         Alert.alert(
           'Koneksi Gagal',
@@ -137,7 +156,6 @@ export default function App() {
     }
   };
 
-  // Update item by barcode
   const updateItemByBarcode = async () => {
     if (!itemData) return;
     
@@ -175,7 +193,6 @@ export default function App() {
     }
   };
 
-  // Fetch all items
   const fetchAllItems = async () => {
     setLoading(true);
     try {
@@ -197,7 +214,6 @@ export default function App() {
       }
       
       if (jsonData.success && jsonData.data) {
-        // Handle pagination
         const items = jsonData.data.data || jsonData.data;
         setAllItems(items);
       }
@@ -209,7 +225,6 @@ export default function App() {
     }
   };
 
-  // Search items
   const searchItems = async (query) => {
     if (!query.trim()) {
       setSearchResults([]);
@@ -245,7 +260,8 @@ export default function App() {
       setLoading(false);
     }
   };
-
+  
+  // --- Fungsi Scan ---
   const handleBarCodeScanned = ({ data }) => {
     setScanned(true);
     setScanning(false);
@@ -272,7 +288,7 @@ export default function App() {
 
   const isPermissionGranted = permission?.granted;
 
-  // Render item card
+  // --- Render Item Card ---
   const renderItemCard = (item, showSelectButton = false) => (
     <View key={item.id} style={styles.itemCard}>
       <View style={styles.itemHeader}>
@@ -310,7 +326,22 @@ export default function App() {
     </View>
   );
 
-  // Permission checks
+  // --- KONDISI RENDER UTAMA ---
+
+  // 1. Tampilkan AuthScreen jika belum login
+  if (!isLoggedIn) {
+    return (
+      <AuthScreen 
+        onLoginSuccess={(user) => {
+          Alert.alert('Login Berhasil', `Selamat datang, ${user.name}!`);
+          setIsLoggedIn(true);
+          setCurrentUser(user);
+        }} 
+      />
+    );
+  }
+
+  // 2. Jika sudah login, cek izin kamera
   if (!permission) {
     return (
       <View style={styles.container}>
@@ -336,26 +367,39 @@ export default function App() {
     );
   }
 
+  // 3. Jika sudah login dan izin ada, tampilkan aplikasi utama
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
       
-      {/* Header with Settings */}
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={styles.headerTitleRow}>
             <MaterialCommunityIcons name="package-variant" size={28} color="white" style={styles.headerIcon} />
             <View>
-              <Text style={styles.title}>Inventory Manager</Text>
+              {/* --- PERUBAHAN FONT DI SINI --- */}
+              <Text style={styles.title}>Manajemen Inventori</Text>
               <Text style={styles.subtitle}>Sistem Manajemen Inventaris</Text>
+              {/* --- AKHIR PERUBAHAN --- */}
             </View>
           </View>
-          <TouchableOpacity 
-            style={styles.settingsButton}
-            onPress={() => setShowSettings(true)}
-          >
-            <Ionicons name="settings" size={26} color="white" />
-          </TouchableOpacity>
+          
+          <View style={styles.headerIconsGroup}>
+            <TouchableOpacity 
+              style={styles.settingsButton}
+              onPress={() => setShowSettings(true)}
+            >
+              <Ionicons name="settings" size={26} color="white" />
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.profileButton}
+              onPress={() => setShowProfile(true)}
+            >
+              <Image source={require('./assets/avatar.png')} style={styles.profileImage} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -426,6 +470,76 @@ export default function App() {
         </View>
       </Modal>
 
+      {/* Modal Profil */}
+      <Modal
+        visible={showProfile}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowProfile(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.profileModalContent}>
+            <TouchableOpacity 
+              style={styles.profileCloseButton}
+              onPress={() => setShowProfile(false)}
+            >
+              <Ionicons name="close" size={28} color="#7F8C8D" />
+            </TouchableOpacity>
+            
+            <Image 
+              source={require('./assets/avatar.png')} 
+              style={styles.profileModalAvatar}
+            />
+            <Text style={styles.profileModalName}>
+              {currentUser?.name}
+            </Text>
+            <Text style={styles.profileModalEmail}>
+              {currentUser?.email}
+            </Text>
+
+            <TouchableOpacity 
+              style={styles.profileModalLogoutButton}
+              onPress={() => {
+                setShowProfile(false);
+                setShowLogoutConfirm(true);
+              }}
+            >
+              <Ionicons name="log-out-outline" size={22} color="#E74C3C" />
+              <Text style={styles.profileModalLogoutButtonText}> Log Out</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Konfirmasi Logout */}
+      <Modal
+        visible={showLogoutConfirm}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowLogoutConfirm(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModalContent}>
+            <Text style={styles.confirmModalText}>Yakin mau Keluar?</Text>
+            <View style={styles.confirmModalButtons}>
+              <TouchableOpacity 
+                style={styles.cancelConfirmButton}
+                onPress={() => setShowLogoutConfirm(false)}
+              >
+                <Text style={styles.cancelConfirmButtonText}>Tidak</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.confirmButton}
+                onPress={handleLogout}
+              >
+                <Text style={styles.confirmButtonText}>Iya</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
         <TouchableOpacity 
@@ -474,7 +588,7 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* Scanner Tab */}
+      {/* --- KONTEN TAB (Scan, List, Search) --- */}
       {activeTab === 'scan' && (
         <>
           {scanning ? (
@@ -490,33 +604,21 @@ export default function App() {
                   ],
                 }}
               />
-              {/* Barcode Scanner Overlay */}
               <View style={styles.scanOverlay}>
-                {/* Top dark overlay */}
                 <View style={styles.overlayTop} />
-                
-                {/* Scanner frame area */}
                 <View style={styles.scannerMiddle}>
                   <View style={styles.overlayLeft} />
-                  
-                  {/* Active scan area with horizontal line */}
                   <View style={styles.scanFrame}>
-                    {/* Corner markers */}
                     <View style={[styles.corner, styles.topLeft]} />
                     <View style={[styles.corner, styles.topRight]} />
                     <View style={[styles.corner, styles.bottomLeft]} />
                     <View style={[styles.corner, styles.bottomRight]} />
-                    
-                    {/* Animated scanning line */}
                     <View style={styles.scanLineContainer}>
                       <View style={styles.scanLine} />
                     </View>
                   </View>
-                  
                   <View style={styles.overlayRight} />
                 </View>
-                
-                {/* Bottom dark overlay with text */}
                 <View style={styles.overlayBottom}>
                   <Text style={styles.scanText}>Posisikan barcode di dalam frame</Text>
                   <Text style={styles.scanSubtext}>Scan akan otomatis terdeteksi</Text>
@@ -564,11 +666,9 @@ export default function App() {
                     </View>
                     
                     {editMode ? (
-                      // Edit Mode - Show Input Fields
                       <View>
                         {Object.keys(editData).map((key) => {
                           if (key === 'id' || key === 'created_at' || key === 'updated_at') return null;
-                          
                           return (
                             <View key={key} style={styles.inputRow}>
                               <Text style={styles.inputLabel}>{key}:</Text>
@@ -583,10 +683,8 @@ export default function App() {
                         })}
                       </View>
                     ) : (
-                      // View Mode - Show Data
                       Object.entries(itemData).map(([key, value]) => {
                         if (key === 'created_at' || key === 'updated_at') return null;
-                        
                         return (
                           <View key={key} style={styles.dataRow}>
                             <Text style={styles.dataLabel}>{key}:</Text>
@@ -598,8 +696,6 @@ export default function App() {
                       })
                     )}
                   </View>
-                  
-
                 </ScrollView>
               ) : (
                 <View style={styles.emptyState}>
@@ -701,6 +797,7 @@ export default function App() {
   );
 }
 
+// --- STYLESHEET (Menambahkan style baru untuk header icons) ---
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -725,37 +822,59 @@ const styles = StyleSheet.create({
   headerTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1, 
   },
   headerIcon: {
     marginRight: 10,
   },
+  // --- PERUBAHAN FONT DI SINI ---
   title: {
-    fontSize: 22,
+    fontSize: 20, // Diperkecil dari 22
     fontWeight: 'bold',
     color: 'white',
-    marginBottom: 4,
+    marginBottom: 2, // Diperkecil dari 4
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 11, // Diperkecil dari 12
     color: '#BDC3C7',
     fontWeight: '500',
+  },
+  // --- AKHIR PERUBAHAN ---
+  headerIconsGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   settingsButton: {
     padding: 8,
   },
+  profileButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#3498DB',
+  },
+  profileImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#ECF0F1'
+  },
   
-  // Modal Styles
+  // Modal Settings
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   modalContent: {
     backgroundColor: 'white',
     borderRadius: 15,
     padding: 20,
-    width: '90%',
+    width: '100%',
     maxWidth: 400,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -854,7 +973,115 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+
+  // Modal Profil
+  profileModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 15,
+    padding: 25,
+    width: '90%',
+    maxWidth: 340,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  profileCloseButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    padding: 5,
+  },
+  profileModalAvatar: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    borderWidth: 3,
+    borderColor: '#3498DB',
+    marginBottom: 15,
+    backgroundColor: '#ECF0F1',
+  },
+  profileModalName: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#2C3E50',
+    marginBottom: 5,
+  },
+  profileModalEmail: {
+    fontSize: 15,
+    color: '#7F8C8D',
+    marginBottom: 25,
+  },
+  profileModalLogoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FADBD8',
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 8,
+  },
+  profileModalLogoutButtonText: {
+    color: '#E74C3C',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Modal Konfirmasi Logout
+  confirmModalContent: {
+    backgroundColor: 'white',
+    borderRadius: 15,
+    padding: 25,
+    width: '90%',
+    maxWidth: 340,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  confirmModalText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#2C3E50',
+    marginBottom: 25,
+    textAlign: 'center',
+  },
+  confirmModalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 15,
+  },
+  cancelConfirmButton: {
+    flex: 1,
+    backgroundColor: '#ECF0F1',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelConfirmButtonText: {
+    color: '#7F8C8D',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  confirmButton: {
+    flex: 1,
+    backgroundColor: '#E74C3C',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  confirmButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+
   
+  // Sisa Style
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: 'white',
@@ -888,8 +1115,6 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
-  
-  // Scanner Styles with Horizontal Barcode Line
   scannerContainer: {
     flex: 1,
     position: 'relative',
@@ -926,8 +1151,6 @@ const styles = StyleSheet.create({
     paddingTop: 30,
     alignItems: 'center',
   },
-  
-  // Corner markers
   corner: {
     position: 'absolute',
     width: 40,
@@ -958,8 +1181,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 4,
     borderRightWidth: 4,
   },
-  
-  // Horizontal scanning line
   scanLineContainer: {
     position: 'absolute',
     top: '50%',
@@ -979,7 +1200,6 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 5,
   },
-  
   scanText: {
     fontSize: 16,
     color: 'white',
