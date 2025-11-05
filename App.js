@@ -12,7 +12,8 @@ import {
   Modal,
   FlatList,
   Dimensions,
-  Image
+  Image,
+  Platform
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
@@ -20,10 +21,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialIcons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { API_URL as DEFAULT_API_URL } from './config';
 
+// Import Date Picker
+import DateTimePicker from '@react-native-community/datetimepicker';
+
 // Import AuthScreen
 import AuthScreen from './AuthScreen';
 
 const { width } = Dimensions.get('window');
+
+const EMPTY_ITEM_DATA = {
+  nibar: '', kode_barang: '', nama: '', barcode: '', spesifikasi: '',
+  lokasi: '', pemakai: '', status: '', jabatan: '', identitas: '',
+  alamat: '', no_bast: '', tgl_bast: '', dokumen: '', no_dok: '',
+  tgl_dok: '', keterangan: '', no_simda: '', no_mesin: '', tahun: '',
+};
 
 export default function App() {
   // State Autentikasi
@@ -47,6 +58,18 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [tempApiUrl, setTempApiUrl] = useState(DEFAULT_API_URL);
+
+  // State Create/Delete
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newItemData, setNewItemData] = useState(EMPTY_ITEM_DATA);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
+
+  // State Date Picker
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [datePickerField, setDatePickerField] = useState(null);
+  const [datePickerTarget, setDatePickerTarget] = useState('newItemData');
+  const [currentDate, setCurrentDate] = useState(new Date());
 
   useEffect(() => {
     loadApiUrl();
@@ -100,10 +123,7 @@ export default function App() {
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         timeout: 10000,
       });
       
@@ -111,12 +131,7 @@ export default function App() {
       console.log('📄 Raw response:', textResponse.substring(0, 200));
       
       if (textResponse.trim().startsWith('<')) {
-        Alert.alert(
-          'API Error',
-          'Server returned HTML instead of JSON. Pastikan:\n\n1. Laravel server berjalan\n2. IP address benar\n3. Endpoint API tersedia'
-        );
-        setItemData(null);
-        return;
+        throw new Error('Server returned HTML. Check API endpoint.');
       }
       
       const jsonData = JSON.parse(textResponse);
@@ -135,20 +150,14 @@ export default function App() {
       }
     } catch (error) {
       const errorMessage = error.message || 'Gagal mengambil data barang';
-      
-      if (error.message === 'Network request failed' || error.message === 'Failed to fetch') {
+      if (error.message.includes('Network request failed')) {
         Alert.alert(
-          'Koneksi Gagal',
-          'Tidak dapat terhubung ke server.\n\nPastikan:\n\n1. ⚙️ IP address di Settings sudah benar\n2. 📡 HP dan server di network yang sama\n3. 🔥 Firewall tidak memblokir koneksi\n4. ✅ Laravel server berjalan (php artisan serve --host=0.0.0.0)',
-          [
-            { text: 'Buka Settings', onPress: () => setShowSettings(true) },
-            { text: 'OK', style: 'cancel' }
-          ]
+          'Koneksi Gagal', 'Tidak dapat terhubung ke server. Periksa IP di Settings dan koneksi WiFi Anda.',
+          [{ text: 'Buka Settings', onPress: () => setShowSettings(true) }, { text: 'OK', style: 'cancel' }]
         );
       } else {
         Alert.alert('Error', errorMessage);
       }
-      
       setItemData(null);
       console.error('❌ Fetch error:', error);
     } finally {
@@ -166,16 +175,18 @@ export default function App() {
       
       const response = await fetch(url, {
         method: 'PUT',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify(editData),
       });
       
       const jsonData = await response.json();
       
       if (!response.ok) {
+        // Cek jika ada error validasi
+        if (jsonData.errors) {
+          const firstError = Object.values(jsonData.errors)[0][0];
+          throw new Error(firstError);
+        }
         throw new Error(jsonData.message || 'Gagal update barang');
       }
       
@@ -184,9 +195,15 @@ export default function App() {
         setEditData(jsonData.data);
         setEditMode(false);
         Alert.alert('Sukses', 'Barang berhasil diupdate!');
+        fetchAllItems();
       }
     } catch (error) {
-      Alert.alert('Error', error.message || 'Gagal update barang');
+       // Menangkap error format tanggal dari Laravel
+      if (error.message.includes('Failed to parse time string')) {
+        Alert.alert('Error', 'Format tanggal salah. Harap gunakan YYYY-MM-DD.');
+      } else {
+        Alert.alert('Error', error.message);
+      }
       console.error('❌ Update error:', error);
     } finally {
       setLoading(false);
@@ -201,10 +218,7 @@ export default function App() {
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
       });
       
       const jsonData = await response.json();
@@ -230,7 +244,6 @@ export default function App() {
       setSearchResults([]);
       return;
     }
-
     setLoading(true);
     try {
       const url = `${apiUrl}/inventory/search?q=${encodeURIComponent(query)}`;
@@ -238,10 +251,7 @@ export default function App() {
       
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
       });
       
       const jsonData = await response.json();
@@ -256,6 +266,88 @@ export default function App() {
     } catch (error) {
       Alert.alert('Error', error.message || 'Gagal mencari data');
       console.error('❌ Search error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- Fungsi API Create & Delete ---
+  const handleCreateItem = async () => {
+    setLoading(true);
+    try {
+      const url = `${apiUrl}/inventory`;
+      console.log('➕ Creating item:', url);
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify(newItemData),
+      });
+
+      const jsonData = await response.json();
+
+      if (!response.ok) {
+        const errorMsg = jsonData.message || 'Gagal membuat barang';
+        if (jsonData.errors) {
+          const firstError = Object.values(jsonData.errors)[0][0];
+          throw new Error(firstError);
+        }
+        throw new Error(errorMsg);
+      }
+
+      if (jsonData.success) {
+        Alert.alert('Sukses', 'Barang baru berhasil ditambahkan!');
+        setShowCreateModal(false);
+        setNewItemData(EMPTY_ITEM_DATA);
+        fetchAllItems(); 
+        setActiveTab('list');
+      } else {
+        throw new Error('Respon server tidak sukses');
+      }
+    } catch (error) {
+      if (error.message.includes('Failed to parse time string')) {
+        Alert.alert('Error', 'Format tanggal salah. Harap gunakan YYYY-MM-DD.');
+      } else {
+        Alert.alert('Error', error.message);
+      }
+      console.error('❌ Create error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteItem = async () => {
+    if (!itemToDelete) return;
+
+    setLoading(true);
+    try {
+      const url = `${apiUrl}/inventory/barcode/${itemToDelete.barcode}`;
+      console.log('❌ Deleting item:', url);
+
+      const response = await fetch(url, {
+        method: 'DELETE',
+        headers: { 'Accept': 'application/json' },
+      });
+
+      const jsonData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(jsonData.message || 'Gagal menghapus barang');
+      }
+
+      if (jsonData.success) {
+        Alert.alert('Sukses', 'Barang berhasil dihapus.');
+        setShowDeleteConfirm(false);
+        setItemToDelete(null);
+        setItemData(null); 
+        setEditMode(false);
+        fetchAllItems(); 
+      } else {
+        throw new Error(jsonData.message || 'Gagal menghapus barang');
+      }
+    } catch (error) {
+      Alert.alert('Error', error.message);
+      console.error('❌ Delete error:', error);
     } finally {
       setLoading(false);
     }
@@ -287,6 +379,69 @@ export default function App() {
   };
 
   const isPermissionGranted = permission?.granted;
+
+  // --- Fungsi Tanggal ---
+  
+  const formatDate = (date) => {
+    if (!date) return '';
+    if (typeof date === 'string' && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      return date;
+    }
+    const d = new Date(date);
+    if (isNaN(d.getTime())) {
+      // Jika format awalnya salah (misal "30 Desember"), coba parsing manual jika perlu
+      // Tapi untuk sekarang, kembalikan string aslinya jika tidak valid
+      return (typeof date === 'string' ? date : ''); 
+    }
+    let month = '' + (d.getMonth() + 1);
+    let day = '' + d.getDate();
+    const year = d.getFullYear();
+
+    if (month.length < 2) month = '0' + month;
+    if (day.length < 2) day = '0' + day;
+
+    return [year, month, day].join('-');
+  };
+
+  const onChangeDate = (event, selectedDate) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (Platform.OS === 'android') {
+        setShowDatePicker(false);
+    }
+
+    if (event.type === 'set' && selectedDate) {
+      const formattedDate = formatDate(selectedDate);
+      
+      if (datePickerTarget === 'newItemData') {
+        setNewItemData(prev => ({ ...prev, [datePickerField]: formattedDate }));
+      } else {
+        setEditData(prev => ({ ...prev, [datePickerField]: formattedDate }));
+      }
+    }
+    setDatePickerField(null);
+  };
+
+  const showDatePickerFor = (field, target, currentValue) => {
+    setDatePickerField(field);
+    setDatePickerTarget(target);
+    
+    let dateToShow = new Date();
+    // Coba parse tanggal yang ada (YYYY-MM-DD)
+    if (currentValue && typeof currentValue === 'string') {
+        const parts = currentValue.split('-');
+        if (parts.length === 3) {
+            // new Date(year, monthIndex, day)
+            const parsedDate = new Date(parts[0], parts[1] - 1, parts[2]);
+            if (!isNaN(parsedDate.getTime())) {
+                dateToShow = parsedDate;
+            }
+        }
+    }
+
+    setCurrentDate(dateToShow);
+    setShowDatePicker(true);
+  };
+
 
   // --- Render Item Card ---
   const renderItemCard = (item, showSelectButton = false) => (
@@ -325,6 +480,55 @@ export default function App() {
       )}
     </View>
   );
+
+  // --- Render Form Input ---
+  const renderFormInputs = (data, setData) => {
+    return Object.keys(data).map((key) => {
+      if (key === 'id' || key === 'created_at' || key === 'updated_at') return null;
+      
+      const isBarcodeEdit = (key === 'barcode' && editMode);
+
+      if (key === 'tgl_bast' || key === 'tgl_dok') {
+        return (
+          <View key={key} style={styles.inputRow}>
+            <Text style={styles.inputLabel}>{key}:</Text>
+            <TouchableOpacity 
+              style={styles.datePickerButton} 
+              onPress={() => showDatePickerFor(key, data === newItemData ? 'newItemData' : 'editData', data[key])}
+            >
+              <Text style={styles.datePickerText}>
+                {data[key] ? formatDate(data[key]) : 'Pilih Tanggal (YYYY-MM-DD)'}
+              </Text>
+              <Ionicons name="calendar" size={20} color="#3498DB" />
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      let placeholder = `Masukkan ${key}`;
+      let keyboardType = 'default';
+
+      if (key === 'tahun' || key === 'no_simda') {
+        keyboardType = 'numeric';
+        placeholder = 'Contoh: 2024';
+      }
+
+      return (
+        <View key={key} style={styles.inputRow}>
+          <Text style={styles.inputLabel}>{key}:</Text>
+          <TextInput
+            style={[styles.textInput, isBarcodeEdit && styles.textInputDisabled]}
+            value={String(data[key] || '')}
+            onChangeText={(text) => setData({...data, [key]: text})}
+            placeholder={placeholder}
+            keyboardType={keyboardType}
+            editable={!isBarcodeEdit}
+            autoCapitalize="none"
+          />
+        </View>
+      );
+    });
+  };
 
   // --- KONDISI RENDER UTAMA ---
 
@@ -378,10 +582,8 @@ export default function App() {
           <View style={styles.headerTitleRow}>
             <MaterialCommunityIcons name="package-variant" size={28} color="white" style={styles.headerIcon} />
             <View>
-              {/* --- PERUBAHAN FONT DI SINI --- */}
               <Text style={styles.title}>Manajemen Inventori</Text>
               <Text style={styles.subtitle}>Sistem Manajemen Inventaris</Text>
-              {/* --- AKHIR PERUBAHAN --- */}
             </View>
           </View>
           
@@ -539,6 +741,94 @@ export default function App() {
         </View>
       </Modal>
 
+      {/* Modal Tambah Barang */}
+      <Modal
+        visible={showCreateModal}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setShowCreateModal(false)}
+      >
+        <View style={styles.container}>
+          <StatusBar style="light" />
+          <View style={styles.header}>
+            <View style={styles.headerContent}>
+              <View style={styles.headerTitleRow}>
+                <MaterialCommunityIcons name="package-plus" size={28} color="white" style={styles.headerIcon} />
+                <View>
+                  <Text style={styles.title}>Tambah Barang Baru</Text>
+                  <Text style={styles.subtitle}>Isi semua data barang</Text>
+                </View>
+              </View>
+              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
+                <Ionicons name="close" size={28} color="white" />
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          <ScrollView style={styles.content}>
+            <View style={styles.card}>
+              {renderFormInputs(newItemData, setNewItemData)}
+            </View>
+            <TouchableOpacity 
+              style={[styles.scanButton, { marginBottom: 40 }]} 
+              onPress={handleCreateItem}
+              disabled={loading}
+            >
+              {loading ? <ActivityIndicator color="white" /> : (
+                <>
+                  <Ionicons name="add-circle" size={20} color="white" />
+                  <Text style={styles.scanButtonText}> Simpan Barang Baru</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      {/* Modal Konfirmasi Hapus */}
+      <Modal
+        visible={showDeleteConfirm}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowDeleteConfirm(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModalContent}>
+            <Text style={styles.confirmModalText}>Yakin ingin menghapus barang ini?</Text>
+            <Text style={styles.confirmModalSubText}>{itemToDelete?.nama}</Text>
+            <View style={styles.confirmModalButtons}>
+              <TouchableOpacity 
+                style={styles.cancelConfirmButton}
+                onPress={() => setShowDeleteConfirm(false)}
+              >
+                <Text style={styles.cancelConfirmButtonText}>Batal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.confirmButton, { backgroundColor: '#E74C3C' }]}
+                onPress={handleDeleteItem}
+                disabled={loading}
+              >
+                {loading ? <ActivityIndicator color="white" /> : (
+                  <Text style={styles.confirmButtonText}>Hapus</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- RENDER DATE PICKER --- */}
+      {showDatePicker && (
+        <DateTimePicker
+            testID="dateTimePicker"
+            value={currentDate}
+            mode="date"
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={onChangeDate}
+        />
+      )}
+      {/* --- END DATE PICKER --- */}
+
 
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
@@ -546,16 +836,9 @@ export default function App() {
           style={[styles.tab, activeTab === 'scan' && styles.activeTab]}
           onPress={() => setActiveTab('scan')}
         >
-          <Ionicons 
-            name="scan" 
-            size={20} 
-            color={activeTab === 'scan' ? '#3498DB' : '#7F8C8D'} 
-          />
-          <Text style={[styles.tabText, activeTab === 'scan' && styles.activeTabText]}>
-            Scan
-          </Text>
+          <Ionicons name="scan" size={20} color={activeTab === 'scan' ? '#3498DB' : '#7F8C8D'} />
+          <Text style={[styles.tabText, activeTab === 'scan' && styles.activeTabText]}>Scan</Text>
         </TouchableOpacity>
-        
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'list' && styles.activeTab]}
           onPress={() => {
@@ -563,32 +846,21 @@ export default function App() {
             fetchAllItems();
           }}
         >
-          <MaterialIcons 
-            name="list-alt" 
-            size={22} 
-            color={activeTab === 'list' ? '#3498DB' : '#7F8C8D'} 
-          />
-          <Text style={[styles.tabText, activeTab === 'list' && styles.activeTabText]}>
-            List
-          </Text>
+          <MaterialIcons name="list-alt" size={22} color={activeTab === 'list' ? '#3498DB' : '#7F8C8D'} />
+          <Text style={[styles.tabText, activeTab === 'list' && styles.activeTabText]}>List</Text>
         </TouchableOpacity>
-        
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'search' && styles.activeTab]}
           onPress={() => setActiveTab('search')}
         >
-          <Ionicons 
-            name="search" 
-            size={20} 
-            color={activeTab === 'search' ? '#3498DB' : '#7F8C8D'} 
-          />
-          <Text style={[styles.tabText, activeTab === 'search' && styles.activeTabText]}>
-            Search
-          </Text>
+          <Ionicons name="search" size={20} color={activeTab === 'search' ? '#3498DB' : '#7F8C8D'} />
+          <Text style={[styles.tabText, activeTab === 'search' && styles.activeTabText]}>Search</Text>
         </TouchableOpacity>
       </View>
 
       {/* --- KONTEN TAB (Scan, List, Search) --- */}
+
+      {/* Scanner Tab */}
       {activeTab === 'scan' && (
         <>
           {scanning ? (
@@ -624,7 +896,6 @@ export default function App() {
                   <Text style={styles.scanSubtext}>Scan akan otomatis terdeteksi</Text>
                 </View>
               </View>
-              
               <View style={styles.cancelButtonContainer}>
                 <TouchableOpacity style={styles.cancelButton} onPress={cancelScanning}>
                   <Ionicons name="close-circle" size={20} color="white" />
@@ -634,7 +905,7 @@ export default function App() {
             </View>
           ) : (
             <View style={styles.content}>
-              {loading ? (
+              {loading && !showDeleteConfirm ? (
                 <View style={styles.loadingContainer}>
                   <ActivityIndicator size="large" color="#007AFF" />
                   <Text style={styles.loadingText}>Memuat data...</Text>
@@ -666,22 +937,7 @@ export default function App() {
                     </View>
                     
                     {editMode ? (
-                      <View>
-                        {Object.keys(editData).map((key) => {
-                          if (key === 'id' || key === 'created_at' || key === 'updated_at') return null;
-                          return (
-                            <View key={key} style={styles.inputRow}>
-                              <Text style={styles.inputLabel}>{key}:</Text>
-                              <TextInput
-                                style={styles.textInput}
-                                value={String(editData[key] || '')}
-                                onChangeText={(text) => setEditData({...editData, [key]: text})}
-                                placeholder={`Masukkan ${key}`}
-                              />
-                            </View>
-                          );
-                        })}
-                      </View>
+                      renderFormInputs(editData, setEditData)
                     ) : (
                       Object.entries(itemData).map(([key, value]) => {
                         if (key === 'created_at' || key === 'updated_at') return null;
@@ -689,12 +945,29 @@ export default function App() {
                           <View key={key} style={styles.dataRow}>
                             <Text style={styles.dataLabel}>{key}:</Text>
                             <Text style={styles.dataValue}>
-                              {value !== null && value !== undefined ? String(value) : 'N/A'}
+                              {(key === 'tgl_bast' || key === 'tgl_dok') 
+                                ? formatDate(value) 
+                                : (value !== null && value !== undefined ? String(value) : 'N/A')
+                              }
                             </Text>
                           </View>
                         );
                       })
                     )}
+
+                    {editMode && (
+                      <TouchableOpacity
+                        style={styles.deleteButton}
+                        onPress={() => {
+                          setItemToDelete(itemData);
+                          setShowDeleteConfirm(true);
+                        }}
+                      >
+                        <Ionicons name="trash-outline" size={18} color="white" />
+                        <Text style={styles.deleteButtonText}> Hapus Barang Ini</Text>
+                      </TouchableOpacity>
+                    )}
+
                   </View>
                 </ScrollView>
               ) : (
@@ -729,7 +1002,18 @@ export default function App() {
               <Text style={styles.loadingText}>Memuat data...</Text>
             </View>
           ) : (
-            <ScrollView style={styles.listContainer}>
+            <>
+              <TouchableOpacity 
+                style={[styles.scanButton, { marginBottom: 15, backgroundColor: '#27AE60' }]}
+                onPress={() => {
+                  setNewItemData(EMPTY_ITEM_DATA);
+                  setShowCreateModal(true);
+                }}
+              >
+                <Ionicons name="add-circle" size={20} color="white" />
+                <Text style={styles.scanButtonText}> Tambah Barang Baru</Text>
+              </TouchableOpacity>
+
               <View style={styles.listHeader}>
                 <Text style={styles.listTitle}>Semua Barang</Text>
                 <TouchableOpacity onPress={fetchAllItems} style={styles.refreshButtonContainer}>
@@ -739,15 +1023,22 @@ export default function App() {
               </View>
               
               {allItems.length > 0 ? (
-                allItems.map(item => renderItemCard(item, true))
+                <FlatList
+                  style={styles.listContainer}
+                  data={allItems}
+                  renderItem={({ item }) => renderItemCard(item, true)}
+                  keyExtractor={item => item.id.toString()}
+                  onRefresh={fetchAllItems}
+                  refreshing={loading}
+                />
               ) : (
-                <View style={styles.emptyState}>
+                <ScrollView contentContainerStyle={styles.emptyState}>
                   <MaterialCommunityIcons name="package-variant-closed" size={80} color="#BDC3C7" />
                   <Text style={styles.emptyText}>Tidak ada data</Text>
                   <Text style={styles.emptySubtext}>Belum ada barang di inventory</Text>
-                </View>
+                </ScrollView>
               )}
-            </ScrollView>
+            </>
           )}
         </View>
       )}
@@ -773,23 +1064,31 @@ export default function App() {
               <Text style={styles.loadingText}>Mencari...</Text>
             </View>
           ) : (
-            <ScrollView style={styles.listContainer}>
-              {searchResults.length > 0 ? (
-                searchResults.map(item => renderItemCard(item, true))
-              ) : searchQuery ? (
-                <View style={styles.emptyState}>
-                  <Ionicons name="search-circle" size={80} color="#BDC3C7" />
-                  <Text style={styles.emptyText}>Tidak ada hasil</Text>
-                  <Text style={styles.emptySubtext}>Coba kata kunci lain</Text>
-                </View>
-              ) : (
-                <View style={styles.emptyState}>
-                  <Ionicons name="search" size={80} color="#BDC3C7" />
-                  <Text style={styles.emptyText}>Cari Barang</Text>
-                  <Text style={styles.emptySubtext}>Ketik untuk mencari barang</Text>
-                </View>
+            <FlatList
+              style={styles.listContainer}
+              data={searchResults}
+              renderItem={({ item }) => renderItemCard(item, true)}
+              keyExtractor={item => item.id.toString()}
+              
+              // --- INI ADALAH PERBAIKAN DARI ERROR ANDA SEBELUMNYA ---
+              ListEmptyComponent={() => (
+                searchQuery ? (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="search-circle" size={80} color="#BDC3C7" />
+                    <Text style={styles.emptyText}>Tidak ada hasil</Text>
+                    <Text style={styles.emptySubtext}>Coba kata kunci lain</Text>
+                  </View>
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Ionicons name="search" size={80} color="#BDC3C7" />
+                    <Text style={styles.emptyText}>Cari Barang</Text>
+                    <Text style={styles.emptySubtext}>Ketik untuk mencari barang</Text>
+                  </View>
+                )
               )}
-            </ScrollView>
+              // --- AKHIR PERBAIKAN ---
+              
+            />
           )}
         </View>
       )}
@@ -797,8 +1096,9 @@ export default function App() {
   );
 }
 
-// --- STYLESHEET (Menambahkan style baru untuk header icons) ---
+// --- STYLESHEET (Menambahkan style baru) ---
 const styles = StyleSheet.create({
+  // ... (style header, modal, tab, dll. tetap sama) ...
   container: {
     flex: 1,
     backgroundColor: '#F5F7FA',
@@ -827,19 +1127,17 @@ const styles = StyleSheet.create({
   headerIcon: {
     marginRight: 10,
   },
-  // --- PERUBAHAN FONT DI SINI ---
   title: {
-    fontSize: 20, // Diperkecil dari 22
+    fontSize: 20,
     fontWeight: 'bold',
     color: 'white',
-    marginBottom: 2, // Diperkecil dari 4
+    marginBottom: 2,
   },
   subtitle: {
-    fontSize: 11, // Diperkecil dari 12
+    fontSize: 11,
     color: '#BDC3C7',
     fontWeight: '500',
   },
-  // --- AKHIR PERUBAHAN ---
   headerIconsGroup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1028,7 +1326,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Modal Konfirmasi Logout
+  // Modal Konfirmasi (Logout & Delete)
   confirmModalContent: {
     backgroundColor: 'white',
     borderRadius: 15,
@@ -1046,8 +1344,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '600',
     color: '#2C3E50',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  confirmModalSubText: {
+    fontSize: 16,
+    color: '#7F8C8D',
     marginBottom: 25,
     textAlign: 'center',
+    fontWeight: '500',
   },
   confirmModalButtons: {
     flexDirection: 'row',
@@ -1069,7 +1374,7 @@ const styles = StyleSheet.create({
   },
   confirmButton: {
     flex: 1,
-    backgroundColor: '#E74C3C',
+    backgroundColor: '#E74C3C', 
     paddingVertical: 12,
     borderRadius: 8,
     alignItems: 'center',
@@ -1079,9 +1384,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-
   
-  // Sisa Style
+  // Tabs
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: 'white',
@@ -1115,6 +1419,8 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+
+  // Scanner
   scannerContainer: {
     flex: 1,
     position: 'relative',
@@ -1341,6 +1647,24 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
     color: '#2C3E50',
   },
+  textInputDisabled: {
+    backgroundColor: '#ECF0F1',
+    color: '#7F8C8D',
+  },
+  datePickerButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#BDC3C7',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#F8F9FA',
+  },
+  datePickerText: {
+    fontSize: 15,
+    color: '#2C3E50',
+  },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
@@ -1380,6 +1704,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  deleteButton: {
+    backgroundColor: '#E74C3C',
+    paddingVertical: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  deleteButtonText: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: '600',
   },
   errorText: {
     fontSize: 18,
