@@ -13,7 +13,8 @@ import {
   FlatList,
   Dimensions,
   Image,
-  Platform
+  Platform,
+  RefreshControl // <-- INI PERBAIKAN UNTUK ERROR 'Element type is invalid'
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
@@ -21,10 +22,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialIcons, MaterialCommunityIcons, FontAwesome5 } from '@expo/vector-icons';
 import { API_URL as DEFAULT_API_URL } from './config';
 
-// Import Date Picker
 import DateTimePicker from '@react-native-community/datetimepicker';
-
-// Import AuthScreen
 import AuthScreen from './AuthScreen';
 
 const { width } = Dimensions.get('window');
@@ -35,6 +33,8 @@ const EMPTY_ITEM_DATA = {
   alamat: '', no_bast: '', tgl_bast: '', dokumen: '', no_dok: '',
   tgl_dok: '', keterangan: '', no_simda: '', no_mesin: '', tahun: '',
 };
+
+const STATUS_OPTIONS = ['Baik', 'Rusak Ringan', 'Rusak Berat', 'Hilang'];
 
 export default function App() {
   // State Autentikasi
@@ -49,7 +49,7 @@ export default function App() {
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [itemData, setItemData] = useState(null);
-  const [activeTab, setActiveTab] = useState('scan');
+  const [activeTab, setActiveTab] = useState('scan'); // Default kembali ke scan
   const [allItems, setAllItems] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -70,6 +70,14 @@ export default function App() {
   const [datePickerField, setDatePickerField] = useState(null);
   const [datePickerTarget, setDatePickerTarget] = useState('newItemData');
   const [currentDate, setCurrentDate] = useState(new Date());
+
+  // State Dropdown Status
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [statusModalTarget, setStatusModalTarget] = useState('newItemData');
+
+  // State Dashboard
+  const [statsData, setStatsData] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(false);
 
   useEffect(() => {
     loadApiUrl();
@@ -271,7 +279,7 @@ export default function App() {
     }
   };
 
-  // --- Fungsi API Create & Delete ---
+  // --- Fungsi API (Create & Delete) ---
   const handleCreateItem = async () => {
     setLoading(true);
     try {
@@ -353,6 +361,38 @@ export default function App() {
     }
   };
   
+  // --- Fungsi Fetch Stats ---
+  const fetchStats = async () => {
+    setLoadingStats(true);
+    try {
+      const url = `${apiUrl}/inventory/stats`;
+      console.log('📊 Fetching stats from:', url);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      });
+      
+      const jsonData = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(jsonData.message || 'Gagal mengambil statistik');
+      }
+      
+      if (jsonData.success && jsonData.data) {
+        setStatsData(jsonData.data);
+      } else {
+        throw new Error('Format respon statistik tidak valid');
+      }
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Gagal mengambil statistik');
+      console.error('❌ Fetch stats error:', error);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+  // ---
+
   // --- Fungsi Scan ---
   const handleBarCodeScanned = ({ data }) => {
     setScanned(true);
@@ -380,8 +420,7 @@ export default function App() {
 
   const isPermissionGranted = permission?.granted;
 
-  // --- Fungsi Tanggal ---
-  
+  // --- Fungsi Tanggal (Format YYYY-MM-DD) ---
   const formatDate = (date) => {
     if (!date) return '';
     if (typeof date === 'string' && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
@@ -389,17 +428,13 @@ export default function App() {
     }
     const d = new Date(date);
     if (isNaN(d.getTime())) {
-      // Jika format awalnya salah (misal "30 Desember"), coba parsing manual jika perlu
-      // Tapi untuk sekarang, kembalikan string aslinya jika tidak valid
       return (typeof date === 'string' ? date : ''); 
     }
     let month = '' + (d.getMonth() + 1);
     let day = '' + d.getDate();
     const year = d.getFullYear();
-
     if (month.length < 2) month = '0' + month;
     if (day.length < 2) day = '0' + day;
-
     return [year, month, day].join('-');
   };
 
@@ -408,10 +443,8 @@ export default function App() {
     if (Platform.OS === 'android') {
         setShowDatePicker(false);
     }
-
     if (event.type === 'set' && selectedDate) {
       const formattedDate = formatDate(selectedDate);
-      
       if (datePickerTarget === 'newItemData') {
         setNewItemData(prev => ({ ...prev, [datePickerField]: formattedDate }));
       } else {
@@ -424,24 +457,30 @@ export default function App() {
   const showDatePickerFor = (field, target, currentValue) => {
     setDatePickerField(field);
     setDatePickerTarget(target);
-    
     let dateToShow = new Date();
-    // Coba parse tanggal yang ada (YYYY-MM-DD)
     if (currentValue && typeof currentValue === 'string') {
         const parts = currentValue.split('-');
         if (parts.length === 3) {
-            // new Date(year, monthIndex, day)
             const parsedDate = new Date(parts[0], parts[1] - 1, parts[2]);
             if (!isNaN(parsedDate.getTime())) {
                 dateToShow = parsedDate;
             }
         }
     }
-
     setCurrentDate(dateToShow);
     setShowDatePicker(true);
   };
 
+  // --- Fungsi Status ---
+  const handleSelectStatus = (status) => {
+    if (statusModalTarget === 'newItemData') {
+      setNewItemData(prev => ({ ...prev, status: status }));
+    } else {
+      setEditData(prev => ({ ...prev, status: status }));
+    }
+    setShowStatusModal(false);
+  };
+  // ---
 
   // --- Render Item Card ---
   const renderItemCard = (item, showSelectButton = false) => (
@@ -453,7 +492,6 @@ export default function App() {
           <Text style={styles.itemBarcode}> {item.barcode || 'N/A'}</Text>
         </View>
       </View>
-      
       <View style={styles.itemDetails}>
         <View style={styles.detailRow}>
           <MaterialIcons name="inventory-2" size={14} color="#7F8C8D" />
@@ -468,7 +506,6 @@ export default function App() {
           <Text style={styles.itemDetailText}>  {item.pemakai || 'N/A'}</Text>
         </View>
       </View>
-
       {showSelectButton && (
         <TouchableOpacity 
           style={styles.selectButton}
@@ -488,6 +525,7 @@ export default function App() {
       
       const isBarcodeEdit = (key === 'barcode' && editMode);
 
+      // Logika untuk Tanggal
       if (key === 'tgl_bast' || key === 'tgl_dok') {
         return (
           <View key={key} style={styles.inputRow}>
@@ -505,6 +543,28 @@ export default function App() {
         );
       }
 
+      // Logika Dropdown Status
+      if (key === 'status') {
+        return (
+          <View key={key} style={styles.inputRow}>
+            <Text style={styles.inputLabel}>Status:</Text>
+            <TouchableOpacity 
+              style={styles.datePickerButton} 
+              onPress={() => {
+                setStatusModalTarget(data === newItemData ? 'newItemData' : 'editData');
+                setShowStatusModal(true);
+              }}
+            >
+              <Text style={styles.datePickerText}>
+                {data[key] || 'Pilih Status'}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color="#3498DB" />
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
+      // Input Teks Biasa
       let placeholder = `Masukkan ${key}`;
       let keyboardType = 'default';
 
@@ -605,107 +665,44 @@ export default function App() {
         </View>
       </View>
 
+      {/* --- SEMUA MODAL --- */}
+
       {/* Settings Modal */}
-      <Modal
-        visible={showSettings}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowSettings(false)}
-      >
+      <Modal visible={showSettings} animationType="slide" transparent={true} onRequestClose={() => setShowSettings(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <View style={styles.modalTitleRow}>
-                <Ionicons name="settings" size={24} color="#2C3E50" />
-                <Text style={styles.modalTitle}> Pengaturan</Text>
-              </View>
-              <TouchableOpacity onPress={() => setShowSettings(false)}>
-                <Ionicons name="close" size={28} color="#7F8C8D" />
-              </TouchableOpacity>
+              <View style={styles.modalTitleRow}><Ionicons name="settings" size={24} color="#2C3E50" /><Text style={styles.modalTitle}> Pengaturan</Text></View>
+              <TouchableOpacity onPress={() => setShowSettings(false)}><Ionicons name="close" size={28} color="#7F8C8D" /></TouchableOpacity>
             </View>
-            
             <View style={styles.settingSection}>
               <Text style={styles.settingLabel}>API URL</Text>
-              <Text style={styles.settingHint}>
-                Masukkan IP address server Laravel Anda
-              </Text>
-              <TextInput
-                style={styles.settingInput}
-                value={tempApiUrl}
-                onChangeText={setTempApiUrl}
-                placeholder="http://192.168.1.100:8000/api"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              
+              <Text style={styles.settingHint}>Masukkan IP address server Laravel Anda</Text>
+              <TextInput style={styles.settingInput} value={tempApiUrl} onChangeText={setTempApiUrl} placeholder="http://192.168.1.100:8000/api" autoCapitalize="none" autoCorrect={false}/>
               <View style={styles.ipExamples}>
                 <Text style={styles.exampleTitle}>Contoh:</Text>
-                <TouchableOpacity onPress={() => setTempApiUrl('http://192.168.1.100:8000/api')}>
-                  <Text style={styles.exampleText}>• http://192.168.1.100:8000/api</Text>
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => setTempApiUrl('http://10.0.2.2:8000/api')}>
-                  <Text style={styles.exampleText}>• http://10.0.2.2:8000/api (Android Emulator)</Text>
-                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setTempApiUrl('http://192.168.1.100:8000/api')}><Text style={styles.exampleText}>• http://192.168.1.100:8000/api</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => setTempApiUrl('http://10.0.2.2:8000/api')}><Text style={styles.exampleText}>• http://10.0.2.2:8000/api (Android Emulator)</Text></TouchableOpacity>
               </View>
-
-              <Text style={styles.currentUrl}>
-                URL Aktif: {apiUrl}
-              </Text>
+              <Text style={styles.currentUrl}>URL Aktif: {apiUrl}</Text>
             </View>
-
             <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={styles.resetButton}
-                onPress={resetApiUrl}
-              >
-                <Text style={styles.resetButtonText}>Reset Default</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.modalSaveButton}
-                onPress={saveApiUrl}
-              >
-                <Ionicons name="save" size={18} color="white" />
-                <Text style={styles.modalSaveButtonText}> Simpan</Text>
-              </TouchableOpacity>
+              <TouchableOpacity style={styles.resetButton} onPress={resetApiUrl}><Text style={styles.resetButtonText}>Reset Default</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.modalSaveButton} onPress={saveApiUrl}><Ionicons name="save" size={18} color="white" /><Text style={styles.modalSaveButtonText}> Simpan</Text></TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
       {/* Modal Profil */}
-      <Modal
-        visible={showProfile}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowProfile(false)}
-      >
+      <Modal visible={showProfile} animationType="fade" transparent={true} onRequestClose={() => setShowProfile(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.profileModalContent}>
-            <TouchableOpacity 
-              style={styles.profileCloseButton}
-              onPress={() => setShowProfile(false)}
-            >
-              <Ionicons name="close" size={28} color="#7F8C8D" />
-            </TouchableOpacity>
-            
-            <Image 
-              source={require('./assets/avatar.png')} 
-              style={styles.profileModalAvatar}
-            />
-            <Text style={styles.profileModalName}>
-              {currentUser?.name}
-            </Text>
-            <Text style={styles.profileModalEmail}>
-              {currentUser?.email}
-            </Text>
-
-            <TouchableOpacity 
-              style={styles.profileModalLogoutButton}
-              onPress={() => {
-                setShowProfile(false);
-                setShowLogoutConfirm(true);
-              }}
-            >
+            <TouchableOpacity style={styles.profileCloseButton} onPress={() => setShowProfile(false)}><Ionicons name="close" size={28} color="#7F8C8D" /></TouchableOpacity>
+            <Image source={require('./assets/avatar.png')} style={styles.profileModalAvatar}/>
+            <Text style={styles.profileModalName}>{currentUser?.name}</Text>
+            <Text style={styles.profileModalEmail}>{currentUser?.email}</Text>
+            <TouchableOpacity style={styles.profileModalLogoutButton} onPress={() => { setShowProfile(false); setShowLogoutConfirm(true); }}>
               <Ionicons name="log-out-outline" size={22} color="#E74C3C" />
               <Text style={styles.profileModalLogoutButtonText}> Log Out</Text>
             </TouchableOpacity>
@@ -714,110 +711,56 @@ export default function App() {
       </Modal>
 
       {/* Modal Konfirmasi Logout */}
-      <Modal
-        visible={showLogoutConfirm}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowLogoutConfirm(false)}
-      >
+      <Modal visible={showLogoutConfirm} animationType="fade" transparent={true} onRequestClose={() => setShowLogoutConfirm(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.confirmModalContent}>
             <Text style={styles.confirmModalText}>Yakin mau Keluar?</Text>
             <View style={styles.confirmModalButtons}>
-              <TouchableOpacity 
-                style={styles.cancelConfirmButton}
-                onPress={() => setShowLogoutConfirm(false)}
-              >
-                <Text style={styles.cancelConfirmButtonText}>Tidak</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={styles.confirmButton}
-                onPress={handleLogout}
-              >
-                <Text style={styles.confirmButtonText}>Iya</Text>
-              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelConfirmButton} onPress={() => setShowLogoutConfirm(false)}><Text style={styles.cancelConfirmButtonText}>Tidak</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.confirmButton} onPress={handleLogout}><Text style={styles.confirmButtonText}>Iya</Text></TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
       {/* Modal Tambah Barang */}
-      <Modal
-        visible={showCreateModal}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => setShowCreateModal(false)}
-      >
+      <Modal visible={showCreateModal} animationType="slide" transparent={false} onRequestClose={() => setShowCreateModal(false)}>
         <View style={styles.container}>
           <StatusBar style="light" />
           <View style={styles.header}>
             <View style={styles.headerContent}>
-              <View style={styles.headerTitleRow}>
-                <MaterialCommunityIcons name="package-plus" size={28} color="white" style={styles.headerIcon} />
-                <View>
-                  <Text style={styles.title}>Tambah Barang Baru</Text>
-                  <Text style={styles.subtitle}>Isi semua data barang</Text>
-                </View>
-              </View>
-              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
-                <Ionicons name="close" size={28} color="white" />
-              </TouchableOpacity>
+              <View style={styles.headerTitleRow}><MaterialCommunityIcons name="package-plus" size={28} color="white" style={styles.headerIcon} /><View><Text style={styles.title}>Tambah Barang Baru</Text><Text style={styles.subtitle}>Isi semua data barang</Text></View></View>
+              <TouchableOpacity onPress={() => setShowCreateModal(false)}><Ionicons name="close" size={28} color="white" /></TouchableOpacity>
             </View>
           </View>
-          
           <ScrollView style={styles.content}>
             <View style={styles.card}>
               {renderFormInputs(newItemData, setNewItemData)}
             </View>
-            <TouchableOpacity 
-              style={[styles.scanButton, { marginBottom: 40 }]} 
-              onPress={handleCreateItem}
-              disabled={loading}
-            >
-              {loading ? <ActivityIndicator color="white" /> : (
-                <>
-                  <Ionicons name="add-circle" size={20} color="white" />
-                  <Text style={styles.scanButtonText}> Simpan Barang Baru</Text>
-                </>
-              )}
+            <TouchableOpacity style={[styles.scanButton, { marginBottom: 40 }]} onPress={handleCreateItem} disabled={loading}>
+              {loading ? <ActivityIndicator color="white" /> : (<><Ionicons name="add-circle" size={20} color="white" /><Text style={styles.scanButtonText}> Simpan Barang Baru</Text></>)}
             </TouchableOpacity>
           </ScrollView>
         </View>
       </Modal>
 
       {/* Modal Konfirmasi Hapus */}
-      <Modal
-        visible={showDeleteConfirm}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowDeleteConfirm(false)}
-      >
+      <Modal visible={showDeleteConfirm} animationType="fade" transparent={true} onRequestClose={() => setShowDeleteConfirm(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.confirmModalContent}>
             <Text style={styles.confirmModalText}>Yakin ingin menghapus barang ini?</Text>
             <Text style={styles.confirmModalSubText}>{itemToDelete?.nama}</Text>
             <View style={styles.confirmModalButtons}>
-              <TouchableOpacity 
-                style={styles.cancelConfirmButton}
-                onPress={() => setShowDeleteConfirm(false)}
-              >
-                <Text style={styles.cancelConfirmButtonText}>Batal</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.confirmButton, { backgroundColor: '#E74C3C' }]}
-                onPress={handleDeleteItem}
-                disabled={loading}
-              >
-                {loading ? <ActivityIndicator color="white" /> : (
-                  <Text style={styles.confirmButtonText}>Hapus</Text>
-                )}
+              <TouchableOpacity style={styles.cancelConfirmButton} onPress={() => setShowDeleteConfirm(false)}><Text style={styles.cancelConfirmButtonText}>Batal</Text></TouchableOpacity>
+              <TouchableOpacity style={[styles.confirmButton, { backgroundColor: '#E74C3C' }]} onPress={handleDeleteItem} disabled={loading}>
+                {loading ? <ActivityIndicator color="white" /> : (<Text style={styles.confirmButtonText}>Hapus</Text>)}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* --- RENDER DATE PICKER --- */}
+      {/* RENDER DATE PICKER */}
       {showDatePicker && (
         <DateTimePicker
             testID="dateTimePicker"
@@ -827,11 +770,62 @@ export default function App() {
             onChange={onChangeDate}
         />
       )}
-      {/* --- END DATE PICKER --- */}
+
+      {/* MODAL PILIH STATUS */}
+      <Modal
+        visible={showStatusModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowStatusModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleRow}>
+                <Ionicons name="options" size={24} color="#2C3E50" />
+                <Text style={styles.modalTitle}> Pilih Status</Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowStatusModal(false)}>
+                <Ionicons name="close" size={28} color="#7F8C8D" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.statusOptionsContainer}>
+              {STATUS_OPTIONS.map((option) => (
+                <TouchableOpacity 
+                  key={option} 
+                  style={styles.statusOptionButton}
+                  onPress={() => handleSelectStatus(option)}
+                >
+                  <Text style={styles.statusOptionText}>{option}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+          </View>
+        </View>
+      </Modal>
 
 
       {/* Tab Navigation */}
       <View style={styles.tabContainer}>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'dashboard' && styles.activeTab]}
+          onPress={() => {
+            setActiveTab('dashboard');
+            fetchStats();
+          }}
+        >
+          <Ionicons 
+            name="pie-chart" 
+            size={20} 
+            color={activeTab === 'dashboard' ? '#3498DB' : '#7F8C8D'} 
+          />
+          <Text style={[styles.tabText, activeTab === 'dashboard' && styles.activeTabText]}>
+            Dashboard
+          </Text>
+        </TouchableOpacity>
+
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'scan' && styles.activeTab]}
           onPress={() => setActiveTab('scan')}
@@ -839,16 +833,15 @@ export default function App() {
           <Ionicons name="scan" size={20} color={activeTab === 'scan' ? '#3498DB' : '#7F8C8D'} />
           <Text style={[styles.tabText, activeTab === 'scan' && styles.activeTabText]}>Scan</Text>
         </TouchableOpacity>
+
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'list' && styles.activeTab]}
-          onPress={() => {
-            setActiveTab('list');
-            fetchAllItems();
-          }}
+          onPress={() => { setActiveTab('list'); fetchAllItems(); }}
         >
           <MaterialIcons name="list-alt" size={22} color={activeTab === 'list' ? '#3498DB' : '#7F8C8D'} />
           <Text style={[styles.tabText, activeTab === 'list' && styles.activeTabText]}>List</Text>
         </TouchableOpacity>
+
         <TouchableOpacity 
           style={[styles.tab, activeTab === 'search' && styles.activeTab]}
           onPress={() => setActiveTab('search')}
@@ -859,6 +852,81 @@ export default function App() {
       </View>
 
       {/* --- KONTEN TAB (Scan, List, Search) --- */}
+      
+      {/* Konten Dashboard */}
+      {activeTab === 'dashboard' && (
+        <ScrollView 
+          style={styles.content}
+          refreshControl={
+            // Di sini letak perbaikan Error 1
+            <RefreshControl refreshing={loadingStats} onRefresh={fetchStats} />
+          }
+        >
+          <View style={styles.listHeader}>
+            <Text style={styles.listTitle}>Dashboard</Text>
+            <TouchableOpacity onPress={fetchStats} style={styles.refreshButtonContainer}>
+              <Ionicons name="refresh" size={18} color="#3498DB" />
+              <Text style={styles.refreshButton}> Refresh</Text>
+            </TouchableOpacity>
+          </View>
+
+          {loadingStats && !statsData ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#007AFF" />
+              <Text style={styles.loadingText}>Memuat Statistik...</Text>
+            </View>
+          ) : statsData ? (
+            <View>
+              {/* Kartu Total Barang */}
+              <View style={[styles.statCard, { backgroundColor: '#3498DB' }]}>
+                <Ionicons name="server" size={32} color="white" style={styles.statIcon} />
+                <Text style={styles.statValue}>{statsData.total_barang}</Text>
+                <Text style={styles.statLabel}>Total Barang</Text>
+              </View>
+
+              {/* Kartu Berdasarkan Status */}
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.cardTitle}>Statistik Status</Text>
+                </View>
+                {Object.entries(statsData.by_status).length > 0 ? (
+                  Object.entries(statsData.by_status).map(([status, total]) => (
+                    <View key={status} style={styles.statRow}>
+                      <Text style={styles.statRowLabel}>{status}</Text>
+                      <Text style={styles.statRowValue}>{total}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.emptySubtext}>Tidak ada data status</Text>
+                )}
+              </View>
+
+              {/* Kartu Berdasarkan Lokasi (Top 5) */}
+              <View style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <Text style={styles.cardTitle}>Top 5 Lokasi</Text>
+                </View>
+                {Object.entries(statsData.by_lokasi).length > 0 ? (
+                  Object.entries(statsData.by_lokasi).map(([lokasi, total]) => (
+                    <View key={lokasi} style={styles.statRow}>
+                      <Text style={styles.statRowLabel}>{lokasi}</Text>
+                      <Text style={styles.statRowValue}>{total}</Text>
+                    </View>
+                  ))
+                ) : (
+                  <Text style={styles.emptySubtext}>Tidak ada data lokasi</Text>
+                )}
+              </View>
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Ionicons name="pie-chart" size={80} color="#BDC3C7" />
+              <Text style={styles.emptyText}>Tidak ada data statistik</Text>
+              <Text style={styles.emptySubtext}>Tarik ke bawah untuk memuat</Text>
+            </View>
+          )}
+        </ScrollView>
+      )}
 
       {/* Scanner Tab */}
       {activeTab === 'scan' && (
@@ -869,69 +937,40 @@ export default function App() {
                 style={StyleSheet.absoluteFillObject}
                 facing="back"
                 onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
-                barcodeScannerSettings={{
-                  barcodeTypes: [
-                    "qr", "ean13", "ean8", "upc_a", "upc_e",
-                    "code39", "code93", "code128", "pdf417", "aztec"
-                  ],
-                }}
+                barcodeScannerSettings={{ barcodeTypes: ["qr", "ean13", "ean8", "upc_a", "upc_e", "code39", "code93", "code128", "pdf417", "aztec"] }}
               />
               <View style={styles.scanOverlay}>
                 <View style={styles.overlayTop} />
                 <View style={styles.scannerMiddle}>
                   <View style={styles.overlayLeft} />
                   <View style={styles.scanFrame}>
-                    <View style={[styles.corner, styles.topLeft]} />
-                    <View style={[styles.corner, styles.topRight]} />
-                    <View style={[styles.corner, styles.bottomLeft]} />
-                    <View style={[styles.corner, styles.bottomRight]} />
-                    <View style={styles.scanLineContainer}>
-                      <View style={styles.scanLine} />
-                    </View>
+                    <View style={[styles.corner, styles.topLeft]} /><View style={[styles.corner, styles.topRight]} />
+                    <View style={[styles.corner, styles.bottomLeft]} /><View style={[styles.corner, styles.bottomRight]} />
+                    <View style={styles.scanLineContainer}><View style={styles.scanLine} /></View>
                   </View>
                   <View style={styles.overlayRight} />
                 </View>
-                <View style={styles.overlayBottom}>
-                  <Text style={styles.scanText}>Posisikan barcode di dalam frame</Text>
-                  <Text style={styles.scanSubtext}>Scan akan otomatis terdeteksi</Text>
-                </View>
+                <View style={styles.overlayBottom}><Text style={styles.scanText}>Posisikan barcode di dalam frame</Text><Text style={styles.scanSubtext}>Scan akan otomatis terdeteksi</Text></View>
               </View>
               <View style={styles.cancelButtonContainer}>
-                <TouchableOpacity style={styles.cancelButton} onPress={cancelScanning}>
-                  <Ionicons name="close-circle" size={20} color="white" />
-                  <Text style={styles.cancelButtonText}> Batal</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={styles.cancelButton} onPress={cancelScanning}><Ionicons name="close-circle" size={20} color="white" /><Text style={styles.cancelButtonText}> Batal</Text></TouchableOpacity>
               </View>
             </View>
           ) : (
             <View style={styles.content}>
               {loading && !showDeleteConfirm ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator size="large" color="#007AFF" />
-                  <Text style={styles.loadingText}>Memuat data...</Text>
-                </View>
+                <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#007AFF" /><Text style={styles.loadingText}>Memuat data...</Text></View>
               ) : itemData ? (
                 <ScrollView style={styles.dataContainer}>
                   <View style={styles.card}>
                     <View style={styles.cardHeader}>
                       <Text style={styles.cardTitle}>Informasi Barang</Text>
                       {!editMode ? (
-                        <TouchableOpacity onPress={() => setEditMode(true)} style={styles.editButtonContainer}>
-                          <MaterialIcons name="edit" size={18} color="#3498DB" />
-                          <Text style={styles.editButton}> Edit</Text>
-                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setEditMode(true)} style={styles.editButtonContainer}><MaterialIcons name="edit" size={18} color="#3498DB" /><Text style={styles.editButton}> Edit</Text></TouchableOpacity>
                       ) : (
                         <View style={styles.editButtons}>
-                          <TouchableOpacity onPress={updateItemByBarcode} style={styles.saveButtonContainer}>
-                            <Ionicons name="checkmark-circle" size={18} color="#27AE60" />
-                            <Text style={styles.saveButton}> Simpan</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => {
-                            setEditMode(false);
-                            setEditData(itemData);
-                          }}>
-                            <Ionicons name="close-circle" size={18} color="#E74C3C" />
-                          </TouchableOpacity>
+                          <TouchableOpacity onPress={updateItemByBarcode} style={styles.saveButtonContainer}><Ionicons name="checkmark-circle" size={18} color="#27AE60" /><Text style={styles.saveButton}> Simpan</Text></TouchableOpacity>
+                          <TouchableOpacity onPress={() => { setEditMode(false); setEditData(itemData); }}><Ionicons name="close-circle" size={18} color="#E74C3C" /></TouchableOpacity>
                         </View>
                       )}
                     </View>
@@ -946,7 +985,7 @@ export default function App() {
                             <Text style={styles.dataLabel}>{key}:</Text>
                             <Text style={styles.dataValue}>
                               {(key === 'tgl_bast' || key === 'tgl_dok') 
-                                ? formatDate(value) 
+                                ? formatDate(value)
                                 : (value !== null && value !== undefined ? String(value) : 'N/A')
                               }
                             </Text>
@@ -956,13 +995,7 @@ export default function App() {
                     )}
 
                     {editMode && (
-                      <TouchableOpacity
-                        style={styles.deleteButton}
-                        onPress={() => {
-                          setItemToDelete(itemData);
-                          setShowDeleteConfirm(true);
-                        }}
-                      >
+                      <TouchableOpacity style={styles.deleteButton} onPress={() => { setItemToDelete(itemData); setShowDeleteConfirm(true); }}>
                         <Ionicons name="trash-outline" size={18} color="white" />
                         <Text style={styles.deleteButtonText}> Hapus Barang Ini</Text>
                       </TouchableOpacity>
@@ -997,29 +1030,16 @@ export default function App() {
       {activeTab === 'list' && (
         <View style={styles.content}>
           {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={styles.loadingText}>Memuat data...</Text>
-            </View>
+            <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#007AFF" /><Text style={styles.loadingText}>Memuat data...</Text></View>
           ) : (
             <>
-              <TouchableOpacity 
-                style={[styles.scanButton, { marginBottom: 15, backgroundColor: '#27AE60' }]}
-                onPress={() => {
-                  setNewItemData(EMPTY_ITEM_DATA);
-                  setShowCreateModal(true);
-                }}
-              >
+              <TouchableOpacity style={[styles.scanButton, { marginBottom: 15, backgroundColor: '#27AE60' }]} onPress={() => { setNewItemData(EMPTY_ITEM_DATA); setShowCreateModal(true); }}>
                 <Ionicons name="add-circle" size={20} color="white" />
                 <Text style={styles.scanButtonText}> Tambah Barang Baru</Text>
               </TouchableOpacity>
-
               <View style={styles.listHeader}>
                 <Text style={styles.listTitle}>Semua Barang</Text>
-                <TouchableOpacity onPress={fetchAllItems} style={styles.refreshButtonContainer}>
-                  <Ionicons name="refresh" size={18} color="#3498DB" />
-                  <Text style={styles.refreshButton}> Refresh</Text>
-                </TouchableOpacity>
+                <TouchableOpacity onPress={fetchAllItems} style={styles.refreshButtonContainer}><Ionicons name="refresh" size={18} color="#3498DB" /><Text style={styles.refreshButton}> Refresh</Text></TouchableOpacity>
               </View>
               
               {allItems.length > 0 ? (
@@ -1059,18 +1079,13 @@ export default function App() {
           </View>
 
           {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#007AFF" />
-              <Text style={styles.loadingText}>Mencari...</Text>
-            </View>
+            <View style={styles.loadingContainer}><ActivityIndicator size="large" color="#007AFF" /><Text style={styles.loadingText}>Mencari...</Text></View>
           ) : (
             <FlatList
               style={styles.listContainer}
               data={searchResults}
               renderItem={({ item }) => renderItemCard(item, true)}
               keyExtractor={item => item.id.toString()}
-              
-              // --- INI ADALAH PERBAIKAN DARI ERROR ANDA SEBELUMNYA ---
               ListEmptyComponent={() => (
                 searchQuery ? (
                   <View style={styles.emptyState}>
@@ -1086,8 +1101,6 @@ export default function App() {
                   </View>
                 )
               )}
-              // --- AKHIR PERBAIKAN ---
-              
             />
           )}
         </View>
@@ -1098,559 +1111,56 @@ export default function App() {
 
 // --- STYLESHEET (Menambahkan style baru) ---
 const styles = StyleSheet.create({
-  // ... (style header, modal, tab, dll. tetap sama) ...
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F7FA',
-  },
-  header: {
-    backgroundColor: '#2C3E50',
-    paddingTop: 45,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
+  // ... (Gaya lainnya tetap sama) ...
+  
+  // --- STYLE BARU DASHBOARD ---
+  statCard: {
+    width: '100%',
+    padding: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginBottom: 15,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 5,
-  },
-  headerContent: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  headerTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1, 
-  },
-  headerIcon: {
-    marginRight: 10,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 2,
-  },
-  subtitle: {
-    fontSize: 11,
-    color: '#BDC3C7',
-    fontWeight: '500',
-  },
-  headerIconsGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  settingsButton: {
-    padding: 8,
-  },
-  profileButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: '#3498DB',
-  },
-  profileImage: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#ECF0F1'
-  },
-  
-  // Modal Settings
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 20,
-    width: '100%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 8,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-  },
-  settingSection: {
-    marginBottom: 20,
-  },
-  settingLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2C3E50',
-    marginBottom: 5,
-  },
-  settingHint: {
-    fontSize: 12,
-    color: '#7F8C8D',
-    marginBottom: 10,
-  },
-  settingInput: {
-    borderWidth: 1,
-    borderColor: '#BDC3C7',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    backgroundColor: '#F8F9FA',
-    marginBottom: 15,
-  },
-  ipExamples: {
-    backgroundColor: '#ECF0F1',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 15,
-  },
-  exampleTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#34495E',
-    marginBottom: 5,
-  },
-  exampleText: {
-    fontSize: 11,
-    color: '#3498DB',
-    marginBottom: 3,
-    marginLeft: 5,
-  },
-  currentUrl: {
-    fontSize: 11,
-    color: '#27AE60',
-    fontWeight: '600',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  resetButton: {
-    flex: 1,
-    backgroundColor: '#ECF0F1',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  resetButtonText: {
-    color: '#7F8C8D',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  modalSaveButton: {
-    flex: 1,
-    backgroundColor: '#27AE60',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  modalSaveButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Modal Profil
-  profileModalContent: {
-    backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 25,
-    width: '90%',
-    maxWidth: 340,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 8,
-  },
-  profileCloseButton: {
-    position: 'absolute',
-    top: 10,
-    right: 10,
-    padding: 5,
-  },
-  profileModalAvatar: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    borderWidth: 3,
-    borderColor: '#3498DB',
-    marginBottom: 15,
-    backgroundColor: '#ECF0F1',
-  },
-  profileModalName: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 5,
-  },
-  profileModalEmail: {
-    fontSize: 15,
-    color: '#7F8C8D',
-    marginBottom: 25,
-  },
-  profileModalLogoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FADBD8',
-    paddingVertical: 12,
-    paddingHorizontal: 30,
-    borderRadius: 8,
-  },
-  profileModalLogoutButtonText: {
-    color: '#E74C3C',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-
-  // Modal Konfirmasi (Logout & Delete)
-  confirmModalContent: {
-    backgroundColor: 'white',
-    borderRadius: 15,
-    padding: 25,
-    width: '90%',
-    maxWidth: 340,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 8,
-  },
-  confirmModalText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2C3E50',
-    marginBottom: 10,
-    textAlign: 'center',
-  },
-  confirmModalSubText: {
-    fontSize: 16,
-    color: '#7F8C8D',
-    marginBottom: 25,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  confirmModalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    gap: 15,
-  },
-  cancelConfirmButton: {
-    flex: 1,
-    backgroundColor: '#ECF0F1',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelConfirmButtonText: {
-    color: '#7F8C8D',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  confirmButton: {
-    flex: 1,
-    backgroundColor: '#E74C3C', 
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  confirmButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  
-  // Tabs
-  tabContainer: {
-    flexDirection: 'row',
-    backgroundColor: 'white',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-    elevation: 2,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
-    flexDirection: 'column',
-    gap: 4,
-  },
-  activeTab: {
-    borderBottomColor: '#3498DB',
-  },
-  tabText: {
-    fontSize: 12,
-    color: '#7F8C8D',
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  activeTabText: {
-    color: '#3498DB',
-    fontWeight: '700',
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-
-  // Scanner
-  scannerContainer: {
-    flex: 1,
-    position: 'relative',
-  },
-  scanOverlay: {
-    flex: 1,
-  },
-  overlayTop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-  },
-  scannerMiddle: {
-    flexDirection: 'row',
-    height: 200,
-  },
-  overlayLeft: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-  },
-  scanFrame: {
-    width: width * 0.8,
-    height: 200,
-    position: 'relative',
-    backgroundColor: 'transparent',
-  },
-  overlayRight: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-  },
-  overlayBottom: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    justifyContent: 'flex-start',
-    paddingTop: 30,
-    alignItems: 'center',
-  },
-  corner: {
-    position: 'absolute',
-    width: 40,
-    height: 40,
-    borderColor: '#27AE60',
-  },
-  topLeft: {
-    top: 0,
-    left: 0,
-    borderTopWidth: 4,
-    borderLeftWidth: 4,
-  },
-  topRight: {
-    top: 0,
-    right: 0,
-    borderTopWidth: 4,
-    borderRightWidth: 4,
-  },
-  bottomLeft: {
-    bottom: 0,
-    left: 0,
-    borderBottomWidth: 4,
-    borderLeftWidth: 4,
-  },
-  bottomRight: {
-    bottom: 0,
-    right: 0,
-    borderBottomWidth: 4,
-    borderRightWidth: 4,
-  },
-  scanLineContainer: {
-    position: 'absolute',
-    top: '50%',
-    left: 0,
-    right: 0,
-    height: 3,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scanLine: {
-    width: '100%',
-    height: 3,
-    backgroundColor: '#27AE60',
-    shadowColor: '#27AE60',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  scanText: {
-    fontSize: 16,
-    color: 'white',
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  scanSubtext: {
-    fontSize: 13,
-    color: '#BDC3C7',
-    textAlign: 'center',
-  },
-  cancelButtonContainer: {
-    position: 'absolute',
-    bottom: 40,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  cancelButton: {
-    backgroundColor: '#E74C3C',
-    paddingHorizontal: 40,
-    paddingVertical: 15,
-    borderRadius: 25,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 5,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5F7FA',
-  },
-  loadingText: {
-    marginTop: 15,
-    fontSize: 16,
-    color: '#7F8C8D',
-    fontWeight: '500',
-  },
-  dataContainer: {
-    flex: 1,
-  },
-  card: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
-    borderLeftWidth: 4,
-    borderLeftColor: '#3498DB',
+    elevation: 4,
   },
-  cardHeader: {
+  statIcon: {
+    marginBottom: 10,
+    opacity: 0.8,
+  },
+  statValue: {
+    fontSize: 42,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  statLabel: {
+    fontSize: 16,
+    color: 'white',
+    fontWeight: '500',
+    opacity: 0.9,
+  },
+  statRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 18,
-    paddingBottom: 12,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#ECF0F1',
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-  },
-  editButtonContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  editButton: {
-    fontSize: 15,
-    color: '#3498DB',
-    fontWeight: '600',
-  },
-  editButtons: {
-    flexDirection: 'row',
-    gap: 15,
-    alignItems: 'center',
-  },
-  saveButtonContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  saveButton: {
-    fontSize: 15,
-    color: '#27AE60',
-    fontWeight: '600',
-  },
-  dataRow: {
-    marginBottom: 14,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F7FA',
-  },
-  dataLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#7F8C8D',
-    textTransform: 'uppercase',
-    marginBottom: 5,
-    letterSpacing: 0.5,
-  },
-  dataValue: {
+  statRowLabel: {
     fontSize: 16,
-    color: '#2C3E50',
+    color: '#34495E',
     fontWeight: '500',
   },
-  inputRow: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#7F8C8D',
-    textTransform: 'uppercase',
-    marginBottom: 6,
-    letterSpacing: 0.5,
-  },
-  textInput: {
-    borderWidth: 1,
-    borderColor: '#BDC3C7',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 15,
-    backgroundColor: '#F8F9FA',
+  statRowValue: {
+    fontSize: 18,
     color: '#2C3E50',
+    fontWeight: 'bold',
   },
-  textInputDisabled: {
-    backgroundColor: '#ECF0F1',
-    color: '#7F8C8D',
-  },
+  // ---
+
   datePickerButton: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1665,45 +1175,34 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#2C3E50',
   },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 60,
+  statusOptionsContainer: {
+    marginTop: 10,
+    width: '100%',
   },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2C3E50',
-    marginBottom: 8,
-    marginTop: 15,
+  statusOptionButton: {
+    width: '100%',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#ECF0F1',
   },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#95A5A6',
-  },
-  buttonContainer: {
-    marginTop: 20,
-  },
-  scanButton: {
-    backgroundColor: '#3498DB',
-    paddingVertical: 16,
-    paddingHorizontal: 30,
-    borderRadius: 12,
-    alignItems: 'center',
-    shadowColor: '#3498DB',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 5,
-    elevation: 5,
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  scanButtonText: {
-    color: 'white',
+  statusOptionText: {
     fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    color: '#3498DB',
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  textInput: {
+    borderWidth: 1,
+    borderColor: '#BDC3C7',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 15,
+    backgroundColor: '#F8F9FA',
+    color: '#2C3E50',
+  },
+  textInputDisabled: { 
+    backgroundColor: '#ECF0F1',
+    color: '#7F8C8D',
   },
   deleteButton: {
     backgroundColor: '#E74C3C',
@@ -1719,117 +1218,117 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  errorText: {
-    fontSize: 18,
-    color: '#E74C3C',
-    fontWeight: '700',
-    marginBottom: 12,
-  },
-  helpText: {
-    fontSize: 14,
-    color: '#7F8C8D',
-    textAlign: 'center',
-    marginBottom: 25,
-    lineHeight: 20,
-  },
-  listContainer: {
-    flex: 1,
-  },
-  listHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-    paddingHorizontal: 5,
-  },
-  listTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-  },
-  refreshButtonContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  refreshButton: {
-    fontSize: 14,
-    color: '#3498DB',
-    fontWeight: '600',
-  },
-  itemCard: {
-    backgroundColor: 'white',
-    borderRadius: 10,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 2,
-    borderLeftWidth: 4,
-    borderLeftColor: '#27AE60',
-  },
-  itemHeader: {
-    marginBottom: 10,
-  },
-  itemName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#2C3E50',
-    marginBottom: 6,
-  },
-  barcodeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  itemBarcode: {
-    fontSize: 13,
-    color: '#7F8C8D',
-    fontWeight: '500',
-  },
-  itemDetails: {
-    marginTop: 8,
-    gap: 6,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  itemDetailText: {
-    fontSize: 13,
-    color: '#34495E',
-    lineHeight: 18,
-  },
-  selectButton: {
-    marginTop: 12,
-    backgroundColor: '#3498DB',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  selectButtonText: {
-    color: 'white',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  searchContainer: {
-    marginBottom: 15,
-  },
-  searchInput: {
-    backgroundColor: 'white',
-    borderWidth: 1,
-    borderColor: '#BDC3C7',
-    borderRadius: 10,
-    padding: 15,
-    fontSize: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-    color: '#2C3E50',
-  },
+
+  // Sisa style
+  container: { flex: 1, backgroundColor: '#F5F7FA' },
+  header: { backgroundColor: '#2C3E50', paddingTop: 45, paddingBottom: 20, paddingHorizontal: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 3, elevation: 5 },
+  headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerTitleRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  headerIcon: { marginRight: 10 },
+  title: { fontSize: 20, fontWeight: 'bold', color: 'white', marginBottom: 2 },
+  subtitle: { fontSize: 11, color: '#BDC3C7', fontWeight: '500' },
+  headerIconsGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  settingsButton: { padding: 8 },
+  profileButton: { width: 38, height: 38, borderRadius: 19, overflow: 'hidden', borderWidth: 2, borderColor: '#3498DB' },
+  profileImage: { width: '100%', height: '100%', backgroundColor: '#ECF0F1' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { backgroundColor: 'white', borderRadius: 15, padding: 20, width: '100%', maxWidth: 400, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 8 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitleRow: { flexDirection: 'row', alignItems: 'center' },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#2C3E50' },
+  settingSection: { marginBottom: 20 },
+  settingLabel: { fontSize: 16, fontWeight: '600', color: '#2C3E50', marginBottom: 5 },
+  settingHint: { fontSize: 12, color: '#7F8C8D', marginBottom: 10 },
+  settingInput: { borderWidth: 1, borderColor: '#BDC3C7', borderRadius: 8, padding: 12, fontSize: 14, backgroundColor: '#F8F9FA', marginBottom: 15 },
+  ipExamples: { backgroundColor: '#ECF0F1', padding: 12, borderRadius: 8, marginBottom: 15 },
+  exampleTitle: { fontSize: 12, fontWeight: '600', color: '#34495E', marginBottom: 5 },
+  exampleText: { fontSize: 11, color: '#3498DB', marginBottom: 3, marginLeft: 5 },
+  currentUrl: { fontSize: 11, color: '#27AE60', fontWeight: '600' },
+  modalButtons: { flexDirection: 'row', gap: 10 },
+  resetButton: { flex: 1, backgroundColor: '#ECF0F1', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  resetButtonText: { color: '#7F8C8D', fontSize: 14, fontWeight: '600' },
+  modalSaveButton: { flex: 1, backgroundColor: '#27AE60', paddingVertical: 12, borderRadius: 8, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' },
+  modalSaveButtonText: { color: 'white', fontSize: 14, fontWeight: '600' },
+  profileModalContent: { backgroundColor: 'white', borderRadius: 15, padding: 25, width: '90%', maxWidth: 340, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 8 },
+  profileCloseButton: { position: 'absolute', top: 10, right: 10, padding: 5 },
+  profileModalAvatar: { width: 90, height: 90, borderRadius: 45, borderWidth: 3, borderColor: '#3498DB', marginBottom: 15, backgroundColor: '#ECF0F1' },
+  profileModalName: { fontSize: 22, fontWeight: 'bold', color: '#2C3E50', marginBottom: 5 },
+  profileModalEmail: { fontSize: 15, color: '#7F8C8D', marginBottom: 25 },
+  profileModalLogoutButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FADBD8', paddingVertical: 12, paddingHorizontal: 30, borderRadius: 8 },
+  profileModalLogoutButtonText: { color: '#E74C3C', fontSize: 16, fontWeight: '600' },
+  confirmModalContent: { backgroundColor: 'white', borderRadius: 15, padding: 25, width: '90%', maxWidth: 340, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 8 },
+  confirmModalText: { fontSize: 18, fontWeight: '600', color: '#2C3E50', marginBottom: 10, textAlign: 'center' },
+  confirmModalSubText: { fontSize: 16, color: '#7F8C8D', marginBottom: 25, textAlign: 'center', fontWeight: '500' },
+  confirmModalButtons: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', gap: 15 },
+  cancelConfirmButton: { flex: 1, backgroundColor: '#ECF0F1', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  cancelConfirmButtonText: { color: '#7F8C8D', fontSize: 16, fontWeight: '600' },
+  confirmButton: { flex: 1, backgroundColor: '#E74C3C', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  confirmButtonText: { color: 'white', fontSize: 16, fontWeight: '600' },
+  tabContainer: { flexDirection: 'row', backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#E0E0E0', elevation: 2 },
+  tab: { flex: 1, paddingVertical: 12, alignItems: 'center', borderBottomWidth: 3, borderBottomColor: 'transparent', flexDirection: 'column', gap: 4 },
+  activeTab: { borderBottomColor: '#3498DB' },
+  tabText: { fontSize: 12, color: '#7F8C8D', fontWeight: '500', marginTop: 2 },
+  activeTabText: { color: '#3498DB', fontWeight: '700' },
+  content: { flex: 1, padding: 16 },
+  scannerContainer: { flex: 1, position: 'relative' },
+  scanOverlay: { flex: 1 },
+  overlayTop: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)' },
+  scannerMiddle: { flexDirection: 'row', height: 200 },
+  overlayLeft: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)' },
+  scanFrame: { width: width * 0.8, height: 200, position: 'relative', backgroundColor: 'transparent' },
+  overlayRight: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)' },
+  overlayBottom: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)', justifyContent: 'flex-start', paddingTop: 30, alignItems: 'center' },
+  corner: { position: 'absolute', width: 40, height: 40, borderColor: '#27AE60' },
+  topLeft: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4 },
+  topRight: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4 },
+  bottomLeft: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4 },
+  bottomRight: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4 },
+  scanLineContainer: { position: 'absolute', top: '50%', left: 0, right: 0, height: 3, justifyContent: 'center', alignItems: 'center' },
+  scanLine: { width: '100%', height: 3, backgroundColor: '#27AE60', shadowColor: '#27AE60', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.8, shadowRadius: 10, elevation: 5 },
+  scanText: { fontSize: 16, color: 'white', fontWeight: '600', textAlign: 'center', marginBottom: 8 },
+  scanSubtext: { fontSize: 13, color: '#BDC3C7', textAlign: 'center' },
+  cancelButtonContainer: { position: 'absolute', bottom: 40, left: 0, right: 0, alignItems: 'center' },
+  cancelButton: { backgroundColor: '#E74C3C', paddingHorizontal: 40, paddingVertical: 15, borderRadius: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3, elevation: 5, flexDirection: 'row', alignItems: 'center' },
+  cancelButtonText: { color: 'white', fontSize: 16, fontWeight: '700' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F7FA' },
+  loadingText: { marginTop: 15, fontSize: 16, color: '#7F8C8D', fontWeight: '500' },
+  dataContainer: { flex: 1 },
+  card: { backgroundColor: 'white', borderRadius: 12, padding: 20, marginBottom: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, borderLeftWidth: 4, borderLeftColor: '#3498DB' },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#ECF0F1' },
+  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#2C3E50' },
+  editButtonContainer: { flexDirection: 'row', alignItems: 'center' },
+  editButton: { fontSize: 15, color: '#3498DB', fontWeight: '600' },
+  editButtons: { flexDirection: 'row', gap: 15, alignItems: 'center' },
+  saveButtonContainer: { flexDirection: 'row', alignItems: 'center' },
+  saveButton: { fontSize: 15, color: '#27AE60', fontWeight: '600' },
+  dataRow: { marginBottom: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#F5F7FA' },
+  dataLabel: { fontSize: 13, fontWeight: '600', color: '#7F8C8D', textTransform: 'uppercase', marginBottom: 5, letterSpacing: 0.5 },
+  dataValue: { fontSize: 16, color: '#2C3E50', fontWeight: '500' },
+  inputRow: { marginBottom: 16 },
+  inputLabel: { fontSize: 13, fontWeight: '600', color: '#7F8C8D', textTransform: 'uppercase', marginBottom: 6, letterSpacing: 0.5 },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
+  emptyText: { fontSize: 18, fontWeight: '700', color: '#2C3E50', marginBottom: 8, marginTop: 15 },
+  emptySubtext: { fontSize: 14, color: '#95A5A6' },
+  buttonContainer: { marginTop: 20 },
+  scanButton: { backgroundColor: '#3498DB', paddingVertical: 16, paddingHorizontal: 30, borderRadius: 12, alignItems: 'center', shadowColor: '#3498DB', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 5, flexDirection: 'row', justifyContent: 'center' },
+  scanButtonText: { color: 'white', fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
+  errorText: { fontSize: 18, color: '#E74C3C', fontWeight: '700', marginBottom: 12 },
+  helpText: { fontSize: 14, color: '#7F8C8D', textAlign: 'center', marginBottom: 25, lineHeight: 20 },
+  listContainer: { flex: 1 },
+  listHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, paddingHorizontal: 5 },
+  listTitle: { fontSize: 20, fontWeight: 'bold', color: '#2C3E50' },
+  refreshButtonContainer: { flexDirection: 'row', alignItems: 'center' },
+  refreshButton: { fontSize: 14, color: '#3498DB', fontWeight: '600' },
+  itemCard: { backgroundColor: 'white', borderRadius: 10, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 2, borderLeftWidth: 4, borderLeftColor: '#27AE60' },
+  itemHeader: { marginBottom: 10 },
+  itemName: { fontSize: 16, fontWeight: 'bold', color: '#2C3E50', marginBottom: 6 },
+  barcodeRow: { flexDirection: 'row', alignItems: 'center' },
+  itemBarcode: { fontSize: 13, color: '#7F8C8D', fontWeight: '500' },
+  itemDetails: { marginTop: 8, gap: 6 },
+  detailRow: { flexDirection: 'row', alignItems: 'center' },
+  itemDetailText: { fontSize: 13, color: '#34495E', lineHeight: 18 },
+  selectButton: { marginTop: 12, backgroundColor: '#3498DB', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8, alignItems: 'center', flexDirection: 'row', justifyContent: 'center' },
+  selectButtonText: { color: 'white', fontSize: 14, fontWeight: '600' },
+  searchContainer: { marginBottom: 15 },
+  searchInput: { backgroundColor: 'white', borderWidth: 1, borderColor: '#BDC3C7', borderRadius: 10, padding: 15, fontSize: 15, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2, elevation: 2, color: '#2C3E50' },
 });
