@@ -14,7 +14,7 @@ import {
   Dimensions,
   Image,
   Platform,
-  RefreshControl // <-- INI PERBAIKAN UNTUK ERROR 'Element type is invalid'
+  RefreshControl 
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { StatusBar } from 'expo-status-bar';
@@ -49,7 +49,7 @@ export default function App() {
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(false);
   const [itemData, setItemData] = useState(null);
-  const [activeTab, setActiveTab] = useState('scan'); // Default kembali ke scan
+  const [activeTab, setActiveTab] = useState('scan'); 
   const [allItems, setAllItems] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -127,28 +127,19 @@ export default function App() {
     setLoading(true);
     try {
       const url = `${apiUrl}/inventory/barcode/${barcode}`;
-      console.log('🔍 Fetching from:', url);
-      
       const response = await fetch(url, {
         method: 'GET',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         timeout: 10000,
       });
-      
       const textResponse = await response.text();
-      console.log('📄 Raw response:', textResponse.substring(0, 200));
-      
       if (textResponse.trim().startsWith('<')) {
         throw new Error('Server returned HTML. Check API endpoint.');
       }
-      
       const jsonData = JSON.parse(textResponse);
-      console.log('✅ Parsed JSON:', jsonData);
-      
       if (!response.ok) {
         throw new Error(jsonData.message || 'Item not found');
       }
-      
       if (jsonData.success && jsonData.data) {
         setItemData(jsonData.data);
         setEditData(jsonData.data);
@@ -175,29 +166,22 @@ export default function App() {
 
   const updateItemByBarcode = async () => {
     if (!itemData) return;
-    
     setLoading(true);
     try {
       const url = `${apiUrl}/inventory/barcode/${itemData.barcode}`;
-      console.log('📝 Updating:', url);
-      
       const response = await fetch(url, {
         method: 'PUT',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify(editData),
       });
-      
       const jsonData = await response.json();
-      
       if (!response.ok) {
-        // Cek jika ada error validasi
         if (jsonData.errors) {
           const firstError = Object.values(jsonData.errors)[0][0];
           throw new Error(firstError);
         }
         throw new Error(jsonData.message || 'Gagal update barang');
       }
-      
       if (jsonData.success && jsonData.data) {
         setItemData(jsonData.data);
         setEditData(jsonData.data);
@@ -206,7 +190,6 @@ export default function App() {
         fetchAllItems();
       }
     } catch (error) {
-       // Menangkap error format tanggal dari Laravel
       if (error.message.includes('Failed to parse time string')) {
         Alert.alert('Error', 'Format tanggal salah. Harap gunakan YYYY-MM-DD.');
       } else {
@@ -222,19 +205,14 @@ export default function App() {
     setLoading(true);
     try {
       const url = `${apiUrl}/inventory`;
-      console.log('📋 Fetching all items from:', url);
-      
       const response = await fetch(url, {
         method: 'GET',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
       });
-      
       const jsonData = await response.json();
-      
       if (!response.ok) {
         throw new Error(jsonData.message || 'Gagal mengambil data');
       }
-      
       if (jsonData.success && jsonData.data) {
         const items = jsonData.data.data || jsonData.data;
         setAllItems(items);
@@ -255,19 +233,14 @@ export default function App() {
     setLoading(true);
     try {
       const url = `${apiUrl}/inventory/search?q=${encodeURIComponent(query)}`;
-      console.log('🔍 Searching:', url);
-      
       const response = await fetch(url, {
         method: 'GET',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
       });
-      
       const jsonData = await response.json();
-      
       if (!response.ok) {
         throw new Error(jsonData.message || 'Gagal search');
       }
-      
       if (jsonData.success && jsonData.data) {
         setSearchResults(jsonData.data);
       }
@@ -284,16 +257,12 @@ export default function App() {
     setLoading(true);
     try {
       const url = `${apiUrl}/inventory`;
-      console.log('➕ Creating item:', url);
-
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
         body: JSON.stringify(newItemData),
       });
-
       const jsonData = await response.json();
-
       if (!response.ok) {
         const errorMsg = jsonData.message || 'Gagal membuat barang';
         if (jsonData.errors) {
@@ -302,7 +271,6 @@ export default function App() {
         }
         throw new Error(errorMsg);
       }
-
       if (jsonData.success) {
         Alert.alert('Sukses', 'Barang baru berhasil ditambahkan!');
         setShowCreateModal(false);
@@ -326,23 +294,17 @@ export default function App() {
 
   const handleDeleteItem = async () => {
     if (!itemToDelete) return;
-
     setLoading(true);
     try {
       const url = `${apiUrl}/inventory/barcode/${itemToDelete.barcode}`;
-      console.log('❌ Deleting item:', url);
-
       const response = await fetch(url, {
         method: 'DELETE',
         headers: { 'Accept': 'application/json' },
       });
-
       const jsonData = await response.json();
-
       if (!response.ok) {
         throw new Error(jsonData.message || 'Gagal menghapus barang');
       }
-
       if (jsonData.success) {
         Alert.alert('Sukses', 'Barang berhasil dihapus.');
         setShowDeleteConfirm(false);
@@ -366,19 +328,14 @@ export default function App() {
     setLoadingStats(true);
     try {
       const url = `${apiUrl}/inventory/stats`;
-      console.log('📊 Fetching stats from:', url);
-      
       const response = await fetch(url, {
         method: 'GET',
         headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
       });
-      
       const jsonData = await response.json();
-      
       if (!response.ok) {
         throw new Error(jsonData.message || 'Gagal mengambil statistik');
       }
-      
       if (jsonData.success && jsonData.data) {
         setStatsData(jsonData.data);
       } else {
@@ -399,25 +356,21 @@ export default function App() {
     setScanning(false);
     fetchItemByBarcode(data);
   };
-
   const startScanning = () => {
     setScanned(false);
     setScanning(true);
     setItemData(null);
     setEditMode(false);
   };
-
   const cancelScanning = () => {
     setScanning(false);
     setScanned(false);
   };
-
   const selectItemFromList = (item) => {
     setItemData(item);
     setEditData(item);
     setActiveTab('scan');
   };
-
   const isPermissionGranted = permission?.granted;
 
   // --- Fungsi Tanggal (Format YYYY-MM-DD) ---
@@ -437,7 +390,6 @@ export default function App() {
     if (day.length < 2) day = '0' + day;
     return [year, month, day].join('-');
   };
-
   const onChangeDate = (event, selectedDate) => {
     setShowDatePicker(Platform.OS === 'ios');
     if (Platform.OS === 'android') {
@@ -453,7 +405,6 @@ export default function App() {
     }
     setDatePickerField(null);
   };
-
   const showDatePickerFor = (field, target, currentValue) => {
     setDatePickerField(field);
     setDatePickerTarget(target);
@@ -549,7 +500,7 @@ export default function App() {
           <View key={key} style={styles.inputRow}>
             <Text style={styles.inputLabel}>Status:</Text>
             <TouchableOpacity 
-              style={styles.datePickerButton} 
+              style={styles.datePickerButton} // Memakai style yang sama
               onPress={() => {
                 setStatusModalTarget(data === newItemData ? 'newItemData' : 'editData');
                 setShowStatusModal(true);
@@ -851,14 +802,13 @@ export default function App() {
         </TouchableOpacity>
       </View>
 
-      {/* --- KONTEN TAB (Scan, List, Search) --- */}
+      {/* --- KONTEN TAB --- */}
       
       {/* Konten Dashboard */}
       {activeTab === 'dashboard' && (
         <ScrollView 
           style={styles.content}
           refreshControl={
-            // Di sini letak perbaikan Error 1
             <RefreshControl refreshing={loadingStats} onRefresh={fetchStats} />
           }
         >
@@ -884,38 +834,36 @@ export default function App() {
                 <Text style={styles.statLabel}>Total Barang</Text>
               </View>
 
-              {/* Kartu Berdasarkan Status */}
-              <View style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>Statistik Status</Text>
+              {/* Grid untuk Statuses */}
+              <View style={styles.statCardGrid}>
+                
+                {/* Card Baik */}
+                <View style={[styles.smallStatCard, { backgroundColor: '#27AE60' }]}>
+                  <Ionicons name="checkmark-circle-outline" size={24} color="white" style={styles.smallStatIcon} />
+                  <Text style={styles.smallStatValue}>{statsData.by_status['Baik'] || 0}</Text>
+                  <Text style={styles.smallStatLabel}>Baik</Text>
                 </View>
-                {Object.entries(statsData.by_status).length > 0 ? (
-                  Object.entries(statsData.by_status).map(([status, total]) => (
-                    <View key={status} style={styles.statRow}>
-                      <Text style={styles.statRowLabel}>{status}</Text>
-                      <Text style={styles.statRowValue}>{total}</Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.emptySubtext}>Tidak ada data status</Text>
-                )}
-              </View>
 
-              {/* Kartu Berdasarkan Lokasi (Top 5) */}
-              <View style={styles.card}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>Top 5 Lokasi</Text>
+                {/* Card Rusak Ringan */}
+                <View style={[styles.smallStatCard, { backgroundColor: '#F39C12' }]}>
+                  <Ionicons name="warning-outline" size={24} color="white" style={styles.smallStatIcon} />
+                  <Text style={styles.smallStatValue}>{statsData.by_status['Rusak Ringan'] || 0}</Text>
+                  <Text style={styles.smallStatLabel}>Rusak Ringan</Text>
                 </View>
-                {Object.entries(statsData.by_lokasi).length > 0 ? (
-                  Object.entries(statsData.by_lokasi).map(([lokasi, total]) => (
-                    <View key={lokasi} style={styles.statRow}>
-                      <Text style={styles.statRowLabel}>{lokasi}</Text>
-                      <Text style={styles.statRowValue}>{total}</Text>
-                    </View>
-                  ))
-                ) : (
-                  <Text style={styles.emptySubtext}>Tidak ada data lokasi</Text>
-                )}
+
+                {/* Card Rusak Berat */}
+                <View style={[styles.smallStatCard, { backgroundColor: '#E74C3C' }]}>
+                  <Ionicons name="close-circle-outline" size={24} color="white" style={styles.smallStatIcon} />
+                  <Text style={styles.smallStatValue}>{statsData.by_status['Rusak Berat'] || 0}</Text>
+                  <Text style={styles.smallStatLabel}>Rusak Berat</Text>
+                </View>
+
+                {/* Card Hilang */}
+                <View style={[styles.smallStatCard, { backgroundColor: '#7F8C8D' }]}>
+                  <Ionicons name="help-circle-outline" size={24} color="white" style={styles.smallStatIcon} />
+                  <Text style={styles.smallStatValue}>{statsData.by_status['Hilang'] || 0}</Text>
+                  <Text style={styles.smallStatLabel}>Hilang</Text>
+                </View>
               </View>
             </View>
           ) : (
@@ -985,7 +933,7 @@ export default function App() {
                             <Text style={styles.dataLabel}>{key}:</Text>
                             <Text style={styles.dataValue}>
                               {(key === 'tgl_bast' || key === 'tgl_dok') 
-                                ? formatDate(value)
+                                ? formatDate(value) 
                                 : (value !== null && value !== undefined ? String(value) : 'N/A')
                               }
                             </Text>
@@ -1109,11 +1057,9 @@ export default function App() {
   );
 }
 
-// --- STYLESHEET (Menambahkan style baru) ---
+// --- STYLESHEET (LENGKAP) ---
 const styles = StyleSheet.create({
-  // ... (Gaya lainnya tetap sama) ...
-  
-  // --- STYLE BARU DASHBOARD ---
+  // --- STYLE DASHBOARD ---
   statCard: {
     width: '100%',
     padding: 20,
@@ -1141,23 +1087,38 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     opacity: 0.9,
   },
-  statRow: {
+  statCardGrid: { 
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
+  },
+  smallStatCard: {
+    width: '48.5%', 
+    padding: 15,
+    borderRadius: 10,
     alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#ECF0F1',
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
-  statRowLabel: {
-    fontSize: 16,
-    color: '#34495E',
-    fontWeight: '500',
+  smallStatIcon: {
+    marginBottom: 5,
+    opacity: 0.9,
   },
-  statRowValue: {
-    fontSize: 18,
-    color: '#2C3E50',
+  smallStatValue: {
+    fontSize: 28,
     fontWeight: 'bold',
+    color: 'white',
+  },
+  smallStatLabel: {
+    fontSize: 14,
+    color: 'white',
+    fontWeight: '500',
+    opacity: 0.9,
+    marginTop: 2,
   },
   // ---
 
