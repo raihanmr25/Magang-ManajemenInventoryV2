@@ -473,6 +473,11 @@ export default function App() {
   const renderFormInputs = (data, setData) => {
     return Object.keys(data).map((key) => {
       if (key === 'id' || key === 'created_at' || key === 'updated_at') return null;
+      // Jika sedang di modal Tambah Barang (bukan Edit Mode), sembunyikan field 'barcode'
+      if (key === 'barcode' && !editMode) {
+       return null; 
+      }
+      // ----------------------------
       
       const isBarcodeEdit = (key === 'barcode' && editMode);
 
