@@ -50,11 +50,11 @@ function LoginScreen({ onLoginSuccess, setAuthPage }) {
       <Text style={styles.authAppName}>Manajemen Inventori</Text>
 
       <Text style={styles.authTitle}>Selamat Datang</Text>
-      <Text style={styles.authSubtitle}>Login ke akun admin Anda</Text>
+      <Text style={styles.authSubtitle}>Silakan Login</Text>
 
       <TextInput
         style={styles.authInput}
-        placeholder="Email (admin@example.com)"
+        placeholder="Email"
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
@@ -63,7 +63,7 @@ function LoginScreen({ onLoginSuccess, setAuthPage }) {
       />
       <TextInput
         style={styles.authInput}
-        placeholder="Password (password123)"
+        placeholder="Password"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
@@ -107,8 +107,8 @@ function RegisterScreen({ setAuthPage }) {
   return (
     <View style={styles.authContainer}>
       <MaterialCommunityIcons name="account-plus" size={80} color="#2C3E50" style={styles.authIcon} />
-      <Text style={styles.authTitle}>Buat Akun</Text>
-      <Text style={styles.authSubtitle}>Fitur registrasi dinonaktifkan</Text>
+      <Text style={styles.authTitle}>Buat Akun Baru</Text>
+      <Text style={styles.authSubtitle}>Masukkan Informasi</Text>
 
       <TextInput 
         style={styles.authInput} 

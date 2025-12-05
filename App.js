@@ -927,6 +927,19 @@ export default function App() {
                         </View>
                       )}
                     </View>
+
+                    {itemData.barcode_image && !editMode && (
+                      <View style={{ alignItems: 'center', marginVertical: 15, padding: 10, backgroundColor: 'white', borderRadius: 8 }}>
+                        <Text style={{ fontSize: 12, color: '#7F8C8D', marginBottom: 5 }}>Scan Barcode Ini:</Text>
+                        <Image
+                          source={{ uri: itemData.barcode_image }}
+                          style={{ width: 200, height: 60, resizeMode: 'contain' }}
+                        />
+                        <Text style={{ fontSize: 14, fontWeight: 'bold', marginTop: 5, letterSpacing: 2 }}>
+                          {itemData.barcode}
+                        </Text>
+                      </View>
+                    )}
                     
                     {editMode ? (
                       renderFormInputs(editData, setEditData)
